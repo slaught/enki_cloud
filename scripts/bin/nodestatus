@@ -1,0 +1,28 @@
+#!/usr/bin/perl -w
+
+use lib q(/usr/local/nginx/perl/);
+use ENKI::Status qw( is_admin_down) ;
+
+#use Getopt::Std;
+#getopts("f");
+sub full_options
+{
+  return grep /-f/, @ARGV;
+}
+
+sub main {
+  my $opt_f = full_options;
+
+  my $i = &is_admin_down; 
+  if ( $i && length $i > 0 ) {
+    print "node is down\n";
+    if ($opt_f ) {
+     print "$i";
+    }
+  } else {
+    print "node is up\n";
+  }
+}
+
+&main;
+

@@ -1,0 +1,15 @@
+<% set_html_title @san.san_name, "San Management" %>
+<h1><%= @san.name %></h1>
+<div id="san_description" >
+<em><%= @san.description %> </em>
+<dl>
+<dt>IP Network</dt><dd><%= @san.network.to_label %></dd>
+</dl>
+</div>
+<%= render :partial => 'node_list', 
+           :locals => {:nodes => @san.san_nodes , :san =>@san } %>
+
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", :action => "edit", :id => @san.id %></li>
+  <li><%= link_to "Back", :action => "list" %></li>
+</ul>

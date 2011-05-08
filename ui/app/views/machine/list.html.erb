@@ -1,0 +1,37 @@
+<% set_html_title "Machines" %>
+<h1>Machines</h1>
+<div>
+  <ul>
+  <% if permitted_to? :create, :machine %>
+    <li><%= link_to "Create New Machine", :action => "new" if permitted_to? :create, :machine %></li>
+  <% end %>
+  </ul>
+</div>
+
+<table border="1" class="sortable">
+  <tr class="thead">
+  <th>Model Number</th>
+  <th>Manufacturer</th>
+  <th class="sorttable_numeric">CPU Cores</th>
+  <th class="sorttable_numeric">Memory</th>
+  </tr>
+<% for entry in @machines %>
+  <tr>
+    <td><%= link_to entry.model_no, :action => "show", :id => entry %></td>  
+  <% for column in [:manufacturer, :cpu_cores, :megabytes_memory ] %>
+    <td><%= entry.send(column) %></td>
+  <% end %>
+  <% if permitted_to? :edit, :machine %>
+  <td>
+    <%= link_to "Edit", :action => "edit", :id => entry %>
+  </td>
+  <% end %>
+  </tr>
+<% end %>
+</table>
+<!-- 
+ %= link_to "Previous page", { :page => @cluster_pages.current.previous } if @cluster_pages.current.previous % 
+ %= link_to "Next page", { :page => @cluster_pages.current.next } if @clsuter_pages.current.next %  -->
+<br />
+<%= link_to "New Machine", :action => "new" if permitted_to? :create, :machine %> 
+

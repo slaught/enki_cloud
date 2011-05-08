@@ -1,0 +1,207 @@
+#!/bin/bash
+
+# Michael Vallaly (Oct 2007) Rev 4.0
+
+# This script uploads/downloads a file from a chrooted transfer server
+
+ADMIN_USER="ftadmin"
+ADMIN_KEY="/etc/enki/keys/transfer.key"
+TRANSFER_SERVER="transfer.example.com"
+TRANSFER_BASEPATH="/data/"
+SSH_BIN="/usr/bin/ssh"
+RSYNC_BIN="/usr/bin/rsync"
+
+###############################################################################
+
+OPT_DOWN=0
+OPT_UP=0
+REMOVE_TRANSFERED_FILES=0
+DRY_RUN=0
+
+usage="$0 -d<ownload> or -u<pload> -f <file/path> \n 
+   NOTE: use of fileglobs IE: -f 'path/*' or -f '*' \n
+\t-d   download files
+\t-u   upload files
+
+\t-k   transfer account private key file
+\t-l   transfer account username
+\t-m   modify (remote/local) filepath when (uploading/downloading) (*)
+\t-n   dry-run (simulate transfer)
+\t-p   remote storage location (IE: jv/aea/seofiles) (Only required for Admin mode)
+\t-r   remove files after transfer
+\t-v   increase logging verbosity
+
+\t   (*) Directory depths > 1 must exist or be created externally.\n"
+
+# Parse our command line options
+while getopts "df:k:l:m:np:rvu" options; do
+  case $options in
+    d ) OPT_DOWN="1";;
+    f ) TRANSFER_FILES+="$OPTARG ";;
+    k ) TRANSFER_KEY="$OPTARG";;
+    l ) TRANSFER_USER="$OPTARG";;
+    m ) PATH_MODIFIER="$OPTARG";;
+    n ) DRY_RUN="1";;
+    p ) REMOTE_PATH="$OPTARG";;
+    r ) REMOVE_TRANSFERED_FILES="1";;
+    v ) VERBOSE+="v";;
+    u ) OPT_UP="1";;
+    \? ) echo -e "$usage"
+         exit 1;;
+     * ) echo -e "$usage"
+          exit 1;;
+  esac
+done
+
+# Check for Transfer Admin
+if [ -z $TRANSFER_USER ]; then
+  TRANSFER_USER=$ADMIN_USER
+  TRANSFER_KEY=$ADMIN_KEY
+
+  # Transfer Admins require full paths
+  if [ "${TRANSFER_FILES}x" == "x" -o "${REMOTE_PATH}x" == "x" ]; then
+    echo -e "$usage" >&2
+    echo -e "\t Admin mode requires remote storage location (-p) for the remote server!"
+    exit 1
+  fi
+
+else 
+  # Basepath is otherwise unneeded
+  TRANSFER_BASEPATH=""
+fi
+
+# Sanity check our input
+if [ "$OPT_DOWN" == "1" -a "$OPT_UP" == "1" ]; then
+  echo -e "$usage" >&2
+  exit 1
+fi
+
+if [ "${TRANSFER_FILES}x" == "x" ]; then
+  echo -e "$usage" >&2
+  exit 1
+fi
+
+# If remote path unspecified use the default (inverted upload/download)
+if [ -z $REMOTE_PATH ]; then
+  if [ "$OPT_DOWN" == "1" ]; then
+    REMOTE_PATH="/upload"
+  else
+    REMOTE_PATH="/download"
+  fi
+fi
+
+# Check that we can load our key
+if [ ! -r $TRANSFER_KEY ]; then
+  echo "Can not open the key file (${TRANSFER_KEY})! Exiting.." >&2
+  exit 1
+fi
+
+# Set rsync options
+RSYNC_KEY_OPT="$SSH_BIN -i $TRANSFER_KEY -o StrictHostKeyChecking=no -o PasswordAuthentication=no"
+RSYNC_OPTS="-rl --protocol=29"
+
+# Handle the path modifier
+if [ "$PATH_MODIFIER" == "" -a "$OPT_DOWN" == "1" ]; then
+  PATH_MODIFIER="`pwd`/"
+elif [ "$PATH_MODIFIER" == "" ]; then
+  PATH_MODIFIER="/"
+elif [ "$PATH_MODIFIER" != "" ]; then
+  PATH_MODIFIER=`echo "/$PATH_MODIFIER/" |tr -s '/'`
+else
+ PATH_MODIFIER=`echo "/$PATH_MODIFIER" |tr -s '/'`
+fi
+
+# Handle file globs on downloading
+if [ "$OPT_DOWN" == "1" ]; then
+
+  # Turn off file globbing
+  set -f
+
+  # Clean up the paths
+  list=""
+
+  # Loop through the file list and remove the extra '/'s
+  for file in $TRANSFER_FILES; do
+    list+="`echo \"/$file\" |tr -s '/'` "
+  done
+  
+  TRANSFER_FILES=$list
+
+fi
+
+# Handle deletion of files
+if [ "$REMOVE_TRANSFERED_FILES" == "1" ]; then
+  RSYNC_OPTS+=" --remove-sent-files"
+fi
+
+# Handle the dry-run
+if [ "$DRY_RUN" == "1" ]; then 
+  RSYNC_OPTS+=" -P --dry-run" 
+  echo "## Begin Transfer DRY RUN ##"
+fi
+
+# Handle logging verbosity
+if [ "${VERBOSE}x" != "x" ]; then
+  RSYNC_OPTS+=" -${VERBOSE}"
+else
+  RSYNC_OPTS+=" -q"
+  QUIET="2> /dev/null"
+fi
+
+# Set our enviornment for rsync
+export RSYNC_RSH="$RSYNC_KEY_OPT"
+
+# Keep some status
+TRANSFER_STATUS=0
+
+if [ "${TRANSFER_FILES}x" == "x" ]; then
+  echo "Nothing to do! Exiting.."
+  exit 0
+fi
+
+# Upload or Download each of the requested files 
+for file in $TRANSFER_FILES; do
+
+  # Check for fileglobs and apply filters if required
+  RSYNC_FILTER=""
+  if [ $(echo ${file} |grep -ce '*') -gt 0 ]; then
+    RSYNC_FILTER="--filter='+ */' --filter=\"+ $(basename ${file})\" --filter='- *'"
+    REMOTE_FILE=`echo "$(dirname ${file})/" |tr -s '/'`
+  else    
+    REMOTE_FILE="${file}"
+  fi
+
+  # Do the transfer securely
+  if [ "$OPT_DOWN" == "1" ]; then
+
+    # Get the file
+    if ! eval "$RSYNC_BIN ${RSYNC_OPTS} ${TRANSFER_USER}@${TRANSFER_SERVER}:${TRANSFER_BASEPATH}${REMOTE_PATH}${REMOTE_FILE} ${PATH_MODIFIER} ${RSYNC_FILTER} ${QUIET}"; then
+      echo "Errors occured downloading file (${REMOTE_PATH}${REMOTE_FILE}) from $TRANSFER_SERVER.. Exiting!" >&2
+      exit 1
+    fi
+
+  elif [ -r ${file} ]; then
+    # Put the file
+
+    if ! eval "$RSYNC_BIN ${RSYNC_OPTS} ${file} ${TRANSFER_USER}@${TRANSFER_SERVER}:${TRANSFER_BASEPATH}${REMOTE_PATH}${PATH_MODIFIER} ${RSYNC_FILTER} ${QUIET}"; then
+      echo "Errors occured uploading file (${file}) to $TRANSFER_SERVER.. Exiting!" >&2
+      exit 1
+    fi
+
+  else
+
+    echo "Can not open the file (${file}) for transfer! Exiting.." >&2
+    exit 1
+
+  fi
+
+done
+
+echo "All files transfered successfully."
+
+# Handle the dry-run
+if [ "$DRY_RUN" == "1" ]; then
+  echo "## Finished Transfer DRY RUN ##"
+fi
+
+exit 0 

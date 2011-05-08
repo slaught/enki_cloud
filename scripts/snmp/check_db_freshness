@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Michael Vallaly (April '08) Ver 1.0
+
+PG_LSCLUSTER_BIN="/usr/bin/pg_lsclusters"
+PGBIN_DIRS="/usr/lib/postgresql"
+
+##########################################################################################
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+usage="Usage: $0 -c[luster] -d <database> -v[ersion] -a <age_in_seconds>"
+
+while getopts "a:d:c:v:" options; do
+  case $options in
+    a ) AGE=$OPTARG;;
+    d ) PG_DATABASE=$OPTARG;;
+    c ) PG_CLUSTER=$OPTARG;;
+    v ) PG_VERSION=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Set our default cluster
+if [ "$PG_CLUSTER" == "" ]; then
+  PG_CLUSTER="usdb"
+fi
+
+# Set our default version
+if [ "$PG_VERSION" == "" ]; then
+  PG_VERSION="8.1"
+fi
+
+if [ "$#" -lt "2" -o "$AGE" == "" -o "$PG_DATABASE" == "" ]; then
+  echo $usage  
+  echo "Required Check Parameters Missing!"  
+  exit $STATE_UNKNOWN
+fi
+
+# Generate our local postgres client binary
+PSQL_BIN="$PGBIN_DIRS/$PG_VERSION/bin/psql" 
+
+# Get our postgres status and port
+PG_STATUS=`$PG_LSCLUSTER_BIN -h |grep $PG_VERSION |grep $PG_CLUSTER |awk '{print $4}'`
+PG_PORT=`$PG_LSCLUSTER_BIN -h |grep $PG_VERSION |grep $PG_CLUSTER |awk '{print $3}'`
+
+# If our database version isn't online notify the user.
+if [ "$PG_STATUS" != "online" ]; then
+  echo "PostgreSQL database ($PG_VERSION/$PG_CLUSTER) is not currently running.."
+  exit $STATE_CRITICAL
+fi
+
+# Connect to the DB to get status
+DB_INFO=`$PSQL_BIN -p $PG_PORT -d $PG_DATABASE -v ON_ERROR_STOP=1 -F"," -P format=unaligned -t -c "select * from tools.freshness;" 2>&1`
+PG_STATUS=$?
+
+if [ $PG_STATUS -eq 0 ]; then
+
+  # Parse the database status
+  db_age=`echo $DB_INFO |cut -s -d, -f3 |cut -d. -f1`
+  db_last_refresh=`echo $DB_INFO |cut -s -d, -f1 |cut -d. -f1`
+
+  # Figure out our ages
+  if [ "$db_age" -lt "$AGE" ]; then
+    echo "DB Freshness is within limits. (Last refreshed: $db_last_refresh)"
+    exit $STATE_OK
+  else
+    echo "DB Freshness is outside limits (Last refreshed: $db_last_refresh)"
+    exit $STATE_CRITICAL
+
+  fi
+fi
+
+echo "Database connection failed!"
+exit $STATE_CRITICAL
+~                            

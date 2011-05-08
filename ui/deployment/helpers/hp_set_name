@@ -1,0 +1,162 @@
+#! /bin/bash
+#
+# Michael Vallaly Ver 1.2 (Oct '10)
+#
+# Description:
+#
+# This script updates the Port name of HP Ports using SNMPv3
+#
+# Usage: ./hp_set_name -h <host> -t "<port>:<name>" -a [all hosts]
+
+# Binary Dependencies
+SNMPSET_BIN="/usr/bin/snmpset"
+SNMPWALK_BIN="/usr/bin/snmpwalk"
+
+IT_CFG_DIR="/tmp/cfg-stage"
+
+# Procurve Authentication
+PROCURVE_AUTH="/etc/cnu/keys/deployment-snmpv3.auth"
+
+#########################################################################################
+
+# HP OIDs
+PORT_NAME_OID=".1.3.6.1.2.1.31.1.1.1.18"
+PORT_NUM_OID=".1.3.6.1.2.1.31.1.1.1.1"
+
+# Print our usage line
+usage="Usage: $0 -h <host> -t '<port>:<name>'\n\n
+\t-a  Load all switch.cfg files from ($IT_CFG_DIR)\n
+\t-f  Load config from switch.cfg file\n
+\t-h  Hostname of Switch\n
+\t-t  Tuple containing 'Port # : Description'\n"
+
+# Check our parameters and set the service_type 
+while getopts "af:h:t:" options; do
+  case $options in
+    a ) ALL_CFGS=1;;
+    f ) SWITCH_FILES+="$OPTARG\n";;
+    h ) SWITCH_HOST="$OPTARG";;
+    t ) CMD_TUPLES+="$OPTARG\n";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check for script dependencies
+for bindep in $SNMPSET_BIN $SNMPWALK_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Make sure we know what to do
+if [ $# -lt 1 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Load the USER authentication (if we are authorized)
+if [ ! -e "$PROCURVE_AUTH" ] || [ ! -r "$PROCURVE_AUTH" ]; then
+  echo "Cannot load authentication file (${PROCURVE_AUTH}).. Exiting!" >&2
+  exit 1
+else
+  . "$PROCURVE_AUTH"
+fi
+
+# Set SNMP options
+SNMP_OPT="-v3 -l authPriv -a SHA -u ${PROCURVE_USER} -A ${PROCURVE_PASS} -x AES -X ${PROCURVE_PASS}"
+
+# Handle loading tuples out of pre-existing config files
+if [ "$ALL_CFGS" == "1" ]; then
+  if [ ! -d $IT_CFG_DIR ]; then
+    echo "Error Configuration Directory ($IT_CFG_DIR) does not exist! Exiting.."
+    exit 1
+  fi
+  SWITCH_FILES+=`find $IT_CFG_DIR -type f -name switch.cfg`
+fi
+
+# Delimit normally
+IFS=$' \t\n'
+
+for file in `echo -e $SWITCH_FILES $SWITCH_HOST`; do
+
+  TUPLES=""
+
+  # If this is a config file parse it, else its a SWITCH_HOST
+  if [ -r ${file} ]; then
+    # Source the cfg file
+    . ${file}
+    
+    # Infer the hostname from the config files parent directory 
+    SWITCH_HOST="`basename $(dirname ${file})`.example.com"
+
+    # Load the hosts tuples 
+    for line in ${SWITCH_LABEL_CFG[*]}; do
+      TUPLES+="`echo $line |cut -s -d: -f1,2`\n"
+    done
+  else 
+    if [ "${SWITCH_HOST}x" == "x" ]; then
+      echo "Configuration file (${file}) not found! Skipping.."
+      continue
+    else
+      TUPLES=$CMD_TUPLES
+    fi
+  fi  
+
+  # Check Switch reachability via ICMP
+  if ! ping ${SWITCH_HOST} -qn -c 1 -w 5 &> /dev/null; then
+    echo "No network connectivity to switch (${SWITCH_HOST}) detected! Skipping.."
+    continue
+  fi
+
+  # Delimit on newline only
+  IFS=$'\n'
+
+  # Get the PORT to OID Mapping of the switch
+  PORT_TO_OID=`eval "${SNMPWALK_BIN} ${SNMP_OPT} ${SWITCH_HOST} -Oeq ${PORT_NUM_OID}" |cut -d. -f2 |grep -e "^[[:digit:]]* [A-Z][[:digit:]]" |tr -t ' ' ':'`
+
+  echo -n "Updating port names on ${SWITCH_HOST}... "
+
+  # Loop over the config tuples
+  for cfg_tuple in `echo -e $TUPLES`; do 
+
+    oid_num=""
+    oid_name=""
+    port_num=`echo $cfg_tuple |cut -s -d: -f1 |tr -t '[[:lower:]]' '[[:upper:]]'`
+    port_name=`echo $cfg_tuple |cut -s -d: -f2`
+
+    if [ "${port_num}x" == "x" ] || [ "${port_name}x" == "x" ]; then
+      echo "Invalid Tuple (${cfg_tuple}).. Skipping!"
+      continue
+    fi
+  
+    # Loop over the swith port<->OID map
+    for port_tuple in `echo "$PORT_TO_OID"`; do
+      
+      oid_num=`echo $port_tuple |cut -s -d: -f1`
+      oid_name=`echo $port_tuple |cut -s -d: -f2`
+
+      if [ "${oid_name}" == "${port_num}" ]; then
+        # Apply the port configuration change via SNMP 
+        if ! eval "${SNMPSET_BIN} ${SNMP_OPT} ${SWITCH_HOST} ${PORT_NAME_OID}.${oid_num} s ${port_name}" &> /dev/null; then
+          echo "Switch port (${port_num}) name change failed! Skipping.."
+        fi
+        continue 2
+      fi
+
+    done 
+
+    echo "Switch port (${port_num}) not found! Skipping.."
+    continue
+
+  done
+
+  echo "Done."
+
+done 
+
+exit 0
+

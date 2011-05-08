@@ -1,0 +1,16 @@
+<% set_html_title "#{@distribution.name} (Edit Distribution)", "Os Versions" %>
+<h1>Edit Distribution</h1>
+
+<% form_for(:distribution, @distribution, :url => { :action => 'update_dist', :id => @distribution }) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.label :distribution %><br/>
+    <%= f.text_field :name%>
+  </p>
+  <p>
+    <%= f.submit "Update" %>
+  </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

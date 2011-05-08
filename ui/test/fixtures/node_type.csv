@@ -1,0 +1,10 @@
+node_type_id, node_type
+1,physical
+2,virtual
+3,dummy
+4,san
+9,pdu
+10,serial console
+12,load balancer
+11,sensor
+14,switch

@@ -1,0 +1,248 @@
+#!/usr/bin/perl
+
+# This script will scp all old compressed logs to the loghost, and,
+# if the transfer is successful, will delete original files from the host
+# Author: Andy Tsouladze
+# Version: 0.8
+# Date: 20101022
+# Todo: 
+
+use strict;
+
+my $ssh = '/usr/bin/ssh';
+my $scp = '/usr/bin/scp';
+my $nc = '/bin/nc';
+my $ls = '/bin/ls';
+my $mkdir = '/bin/mkdir';
+my $hostname = '/bin/hostname';
+my $config = '/etc/enki/configs/enki-shiplogs.conf';
+my $known_hosts = '/etc/enki/configs/enki-shiplogs.known_hosts';
+my ($loghost,$rembase,$key,$remuser,@Logdirs,@Remdirs,$i,@Files,@Errors);
+my $allowedprefix = '/var/log/';
+my @Filetypes = ('gz','bz2');
+my $filetypes = join '|', @Filetypes;
+my $mailfrom = 'root';
+my $mailto = 'itcfg@example.com';
+
+# Debug can be defined in the file by making in non-zero, or by running
+# the script with `-d' option
+# Lots of extra messages are printed in debug mode.  Note that this is not
+# a dry-run
+my $debug = 0; 
+$debug = 1 if ($ARGV[0] eq '-d');
+
+die "Must be root to run this script!\n" if $<;
+chomp (my $myself = `$hostname -f`);
+
+# Define private "known_hosts" file to exclude dependency on user file
+my $sshopt = "-o UserKnownHostsFile=$known_hosts";
+
+# Checking that everything is in place
+&AbEnd("Config file $config not found! Exiting...\n") if (! -f $config);
+if (! -f $known_hosts) {
+	my $error = "Private known_hosts file $known_hosts not found! Exiting...\n";
+	$error .= "You may need to run manually the following:\n";
+	$error .= "sudo ssh $sshopt -i <keyfile> <remuser>@<loghost>\n";
+	&AbEnd($error);
+}
+
+print "Running on $myself\n" if $debug;
+
+# Create timestamp
+my ($mon,$year) = (localtime(time))[4,5];
+$mon++;
+$mon = '0' . $mon if ($mon < 10);
+$year+=1900;
+my $timestamp = $year . $mon;
+print "Timestamp is $timestamp\n" if $debug;
+
+# Read config file
+&Config();
+# Check that base structure exists on the remote host
+my $rc = &CheckRemBase($rembase);
+&AbEnd("Remote basedir $loghost:$rembase does not exist!\n") if $rc;
+
+# Check where the logs are supposed to be
+for ($i=0;$i<=$#Logdirs;$i++) {
+my $logsrc = $Logdirs[$i];
+if ($logsrc !~ /^$allowedprefix/) {
+	my $error = "Directory $logsrc is NOT allowed for logging. Skipping!\n";
+	print $error if $debug;
+	push (@Errors, $error) if $error;
+	next;
+}
+
+# ... and that it exists
+if (! -d $logsrc) {
+	my $error = "Directory $logsrc does not exist.  Skipping!\n" if $debug;
+	print $error if $debug;
+	push (@Errors, $error) if $error;
+	next;
+}
+
+# Verify that REMDIR is specified correctly in the config file.
+if ($Remdirs[$i] eq '') {
+	$Remdirs[$i] = $Logdirs[$i];
+	$Remdirs[$i] =~ s/^\///;
+	print "Remdir for $Logdirs[$i] not specified.  Using LOGDIR as REMDIR!\n" if $debug;
+}
+my $remdir = join '/', ($rembase, $myself, $Remdirs[$i], $timestamp);
+print "LOGGING (ready) $logsrc to $remdir\n" if $debug; 
+
+# Create remote directory if needed
+my $ret = &MakeRemdir($remdir);
+&AbEnd("Cannot create remote dir $remdir!\n") if $ret;
+
+# scp files
+my $ret = &ShipFiles($logsrc,$remdir);
+if ($ret) {
+	push (@Errors, "File transfer failed for $logsrc.\n");
+	print "Transfer failed!\n" if $debug;
+} else {
+	print "Removing transferred files from $logsrc\n" if $debug;
+	# Remove successfully shipped files from the host
+	chdir $logsrc && unlink @Files;
+}
+# Empty file list for the next iteration
+@Files = ();
+}
+
+# Send mail if there are any errors (will almost always happen in debug mode)
+&Mail if @Errors;
+
+# Finish
+exit 0;
+
+########################################
+# Subroutines
+########################################
+
+########################################
+sub AbEnd {
+# This sub is called on a serious error when it is impossible to proceed
+my ($error) = @_;
+print $error if $debug;
+push (@Errors, $error);
+&Mail();
+exit 1;
+} # End sub AbEnd
+
+########################################
+sub ShipFiles {
+# This sub is called to actually ship files
+my ($logsrc, $remdir) = @_;
+
+# Make a list
+opendir (DIR, "$logsrc") or return ("Cannot open $logsrc!\n");
+@Files = grep (/\.($filetypes)$/, readdir (DIR));
+closedir (DIR);
+print "Shipping $#Files files\n" if $debug;
+if (! @Files) {
+	push (@Errors, "No files to transfer in $logsrc!\n") if $debug;
+	return;
+}
+chdir $logsrc;
+# Do it
+my $cmd = "$scp $sshopt -i $key -pq @Files $remuser\@$loghost:$remdir";
+print "Copy files using cmd:\n\t$cmd\n" if $debug;
+my $rc = system ($cmd);
+# Verify that system commands did not fail
+print "Result: RC is $rc\n" if $debug;
+return($rc);
+}
+
+########################################
+sub MakeRemdir {
+# Here we create a remote directory to copy files to
+my ($remdir) = @_;
+my $cmd = "$ssh $sshopt -i $key $remuser\@$loghost $mkdir -p $remdir >/dev/null 2>&1";
+print "Create remote dir using cmd\n\t$cmd\n" if $debug;
+my $rc = system ($cmd);
+# Verify that system commands did not fail
+print "Result: RC is $rc\n" if $debug;
+return ($rc);
+} # End sub CheckRemdir
+
+########################################
+sub Config {
+# This sub reads config file and sets important variables
+open (CONF, "$config");
+my @Conf = <CONF>;
+my $ncopt = '-z';
+close (CONF);
+
+for (@Conf) {
+	next if (/^\s*$/);
+	next if (/^#/);
+	chomp;
+	my (@Fields) = split (/:/, $_);
+	if ($Fields[0] eq 'LOGHOST') {
+		# LOGHOST is remote syslog server
+		$loghost = $Fields[1];
+		print "LOGHOST is $loghost\n" if $debug;
+		$ncopt .= 'n' unless ($loghost =~ /[a-zA-Z]/);
+		# Check connectivity to port 22 using nc
+		my $rc = system ("$nc $ncopt -w 3 $loghost 22");
+		print "Test ssh connection to $loghost: RC is $rc\n" if $debug;
+		# Cannot continue if there is no connection
+		&AbEnd("No connection to loghost $loghost") if $rc;
+	} elsif ($Fields[0] eq 'LOGDIR') {
+		# LOGDIR(s) is where we get files
+		push (@Logdirs, $Fields[1]);
+		push (@Remdirs, $Fields[2]);
+		print "LOGGING (conf) $Logdirs[$#Logdirs] to $Remdirs[$#Remdirs]\n" if $debug;
+	} elsif ($Fields[0] eq 'REMUSER') {
+		# REMUSER is, obviously, a user we connect as
+		$remuser = $Fields[1];
+		print "REMUSER is $remuser\n" if $debug;
+	} elsif ($Fields[0] eq 'MAILTO') {
+		# This is who gets complaints ;)
+		$mailto = $Fields[1];
+		print "MAILTO is $mailto\n" if $debug;
+	} elsif ($Fields[0] eq 'REMOTEBASE') {
+		# REMBASE is the base structure on the remote host
+		$rembase = $Fields[1];
+		print "REMBASE is $rembase\n" if $debug;
+	} elsif ($Fields[0] eq 'KEY') {
+		# KEY is the file that has ssh key
+		$key = $Fields[1];
+		# Cannot continue without a key
+		&AbEnd("No ssh key $key found!\n") unless (-r $key);
+		print "KEY is $key\n" if $debug;
+		# Just in case, verify and fix key file permissions and ownership
+		my ($mode, $uid, $gid) = (stat($key))[2,4,5];
+		chown 0, 0, $key if ($uid or $gid);
+		# Perl stat returns 33024 (octal) for mode 0400
+		chmod 0400, $key if ($mode != 33024);
+	}
+}
+} # End sub Config
+
+########################################
+sub CheckRemBase {
+# Here we check that remote base structure actually exists
+my ($rembase) = @_;
+my $cmd = "$ssh $sshopt -i $key $remuser\@$loghost $ls -ld $rembase >/dev/null 2>&1";
+print "Checking $rembase with cmd\n$cmd\n" if $debug;
+my $rc = system ($cmd);
+print "Checking $rembase result: RC is $rc\n" if $debug;
+return ($rc);
+} # End sub CheckRemBase
+
+########################################
+sub Mail {
+# Sending mail - what did you expect?
+my $SENDMAIL = "/usr/lib/sendmail -it";
+open (SENDMAIL,"| $SENDMAIL");
+print SENDMAIL <<EOP;
+From: $mailfrom
+To: $mailto
+Subject: Problem with log transfer on $myself\n
+
+ Script is $0
+
+ @Errors
+EOP
+1;
+close (SENDMAIL);
+} # End sub Mail

@@ -1,0 +1,141 @@
+#!/bin/bash
+#
+# Michael Vallaly
+#
+# Version 1.0 (April '09)
+#
+# This script provides automated ramfs creating/destruction/syncing.
+
+# Datadirs
+DATA_DIRS=(
+	"/test"
+)
+
+# Ramfs Mountpoint
+RAMDISK_BASE="/mnt/ramdisk"
+RSYNC_BIN="/usr/bin/rsync"
+#RAMDISK_SIZE="512M"
+RAMDISK_SIZE="5M"
+RAMDIR_SUFFIX=".ramdisk"
+
+##########################################################################
+ramdisk_start(){
+
+  if grep -qw ${RAMDISK_BASE} /etc/mtab; then 
+    echo "Ramfs already mounted! Exiting..."
+    exit 1
+  fi
+
+  echo "Starting RAM Disk... "
+
+  echo -n "Mounting Filesystem: "
+  if mount -t tmpfs -o size=${RAMDISK_SIZE},nr_inodes=15k tmpfs ${RAMDISK_BASE}; then
+    echo "Done."
+  else 
+    echo "Unable to mount ramdisk!"
+    exit 1
+  fi
+
+}
+
+ramdisk_sync(){
+
+  if grep -qw ${RAMDISK_BASE} /etc/mtab; then 
+    echo -n ""
+  else 
+    echo "Ramdisk not mounted! Exiting..."
+    exit 1
+  fi
+
+  START_TIME=`date +%s`
+
+  for dir in ${DATA_DIRS[*]}; do
+
+    # Check the data directory even exists.
+    if [ ! -e $dir ]; then
+      echo "Error: ${dir} not found.. Skipping!"
+      continue
+    fi
+
+    # Check if the data dir is already a mountpoint (bind)
+    if grep -qw ${dir} /etc/mtab; then
+      # If so umount it
+      if ! umount ${dir} 2> /dev/null; then
+        echo "Error: Could not umount ${dir} ramdisk! (Are there users/processes still using the disk?). Skipping!"
+        continue 
+      fi
+    if
+
+    # Sync the data up from real disk
+    echo -n "Updating ramdisk with data from ${dir}... "
+    $RSYNC_BIN -a --inplace --delete ${dir}/* ${RAMDISK_BASE}/${dir}${RAMDIR_SUFFIX}/
+    if [ $? -ne 0 ]; then 
+      echo "Failed to sync ${dir} data to ramdisk!"
+    else 
+      echo "Done."
+    fi
+
+   # Remap ramdisk on datadir
+   if ! mount --bind ${RAMDISK_BASE}/${dir}${RAMDIR_SUFFIX} ${dir}; then
+     echo "Failed to bind ramdisk to ${dir}!.. Skipping!"
+     continue
+   fi
+
+  done
+
+  END_TIME=`date +%s`
+  let "elapsed_time = $END_TIME - $START_TIME"
+  echo "Ramdisk synchronization completed in ${elapsed_time} seconds."
+
+  fi
+
+}
+
+ramdisk_stop(){
+
+  if grep -qw ${RAMDISK_BASE} /etc/mtab; then 
+    echo "Stopping ramdisk..."
+  else 
+    echo "Ramdisk not mounted! Exiting..."
+    exit 1
+  fi
+
+  echo -n "Unmounting Ramdisk: "
+
+  for dir in ${DATA_DIRS[*]}; do
+    umount ${dir} &> /dev/null
+  done
+
+  if umount ${RAMDISK_BASE}; then 
+    echo "Done."
+  else 
+    echo "Failed to unmount ramdisk."
+    exit 1
+  fi
+
+}
+
+case "$1" in
+        	start)
+                  ramdisk_start;
+                  ramdisk_sync;
+                ;;
+	        stop)
+                  ramdisk_stop;
+                ;;
+ restart|force-reload)
+                  ramdisk_stop;
+                  sleep 1;
+                  ramdisk_start;
+                ;;
+        	sync)
+                  ramdisk_sync;
+                ;;
+        	*)
+ 		  echo "Usage: $0 {start|stop|restart|sync}"
+ 		  exit 1
+                ;;
+esac
+
+exit 0
+

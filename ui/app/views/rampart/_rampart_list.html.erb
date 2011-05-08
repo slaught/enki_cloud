@@ -1,0 +1,31 @@
+<div id="ramparts">
+<table class="sortable">
+  <tr>
+    <th>Node</th>
+    <th>Has Service IP?</th>
+    <th>Home Network</th>
+    <th>Locale IP</th>
+    <th>Network IP</th>
+    <th>Public IP</th>
+  </tr>
+<% for r in ramparts %>
+  <tr>
+    <td><%= link_to r.node.to_label, {:controller => 'rampart', :action => "show", :id => r} %></td>
+    <td><%= r.has_service_ip.to_s.capitalize %></td>
+    <td><%= r.home_network %></td>
+    <td sorttable_customkey="<%= sorttable_ip(r.locale_ip_address) %>"><%= r.locale_ip_address %></td>
+    <td sorttable_customkey="<%= sorttable_ip(r.network_ip) %>"><%= r.network_ip %></td>
+    <td sorttable_customkey="<%= sorttable_ip(r.public_ip_address) %>"><%= r.public_ip_address %></td>
+    <% if permitted_to? :edit, :rampart %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"),
+      {:controller => 'rampart', :action => "edit", :id => r}, {:title => "Edit"} %></td>
+    <% end %>
+    <% if permitted_to? :delete, :rampart %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/cross.png", :alt => "Delete"),
+      {:controller => 'rampart', :action => "delete", :id => r},
+      {:confirm => "Are you sure?", :method => :post, :title => "Destroy" } %></td>
+    <% end %>
+  </tr>
+<% end %>
+</table>
+</div>

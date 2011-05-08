@@ -1,0 +1,15 @@
+development:
+    :name: ldap
+    :port: 389
+    :base_dn: ou=people,dc=example,dc=com
+
+test:
+    :name: ldap
+    :port: 389
+    :base_dn: ou=people,dc=example,dc=com
+    
+production:
+    :name: ldap
+    :port: 389
+    :base_dn: ou=people,dc=example,dc=com
+

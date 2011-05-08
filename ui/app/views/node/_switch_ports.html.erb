@@ -1,0 +1,47 @@
+<div id="switch_ports" class="node_data">
+  <h2>Switch Ports</h2>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <!-- <div> -->
+  <table class="networkports">
+    <tr>
+      <th>Switch</th>
+      <th>Port</th>
+    </tr>
+    <% for port in node.network_switch_ports %>
+      <tr><td><%= link_to_node port.switch %></td><td><%= port.port %></td>
+        <% permitted_to? :remove_switch_port, :node do %>
+           <td class="td_extra">
+        <% form_remote_tag(:html => {:id=>"remove_switch_port_#{port.id}",
+               :action => { :action => "remove_switch_port", :id => node.id}},
+               :url => url_for({ :action => "remove_switch_port", :id => node.id}), 
+               :update => 'switch_ports') do  %>
+          <%= hidden_field_tag( "port", port.id ) %>
+          <%= image_submit_tag "silk/delete.png" %>
+        <% end %>
+        </td>
+      <% end %>
+      </tr>
+    <% end %>
+  </table>
+  <% permitted_to? :add_switch_port, :node do %>
+  <br/>
+  <div>
+    <% form_remote_tag(:html => {:id=>"add_switch_port_node",
+           :action => { :action => "add_switch_port", :id => node.id}},
+           :url => url_for({ :action => "add_switch_port", :id => node.id}), 
+           :update => 'switch_ports') do   %>
+      <%= collection_select(:switch_port, :switch_id, Node.find_all_switches(node.datacenter), :node_id, :to_label ) %>
+      <%= text_field_tag "switch_port[port]", "", {:size => 5, :maxlength => 3} %>
+      <%= submit_tag "Plug" %>
+    <% end %>
+  </div>
+  <% end %>
+  <% if node.node_type.is_switch? %>
+    <h3>Used Switch Ports</h3>
+    <div>
+      <% for i in NetworkSwitchPort.find_all_by_switch_id(node.id, :order => :port) -%>
+        <span><%= link_to i.port, :controller => 'node', :action => "show", :id => i.node %></span>
+      <% end -%>
+    </div>
+  <% end %>
+</div>

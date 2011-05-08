@@ -1,0 +1,19 @@
+<% set_html_title "Network Ethernet Ports Mappings" %>
+<h1>Network Ethernet Ports Mappings</h1>
+<table border="1" class="sortable">
+  <tr class="thead">
+  <th>Switch </th>
+  <th>Hostname </th>
+  <th>Port</th>
+  </tr>
+<% for i in @ports %>
+  <tr>
+    <td><%= link_to "#{i.switch.to_label}", :controller => 'node', :action => "show", :id => i.switch%></td>
+    <td><%= link_to "#{i.node.to_label}", :controller => 'node', :action => "show", :id => i.node %></td>
+    <td><%= i.port %></td>
+  </tr>
+<% end %>
+</table>
+<!-- -->
+<br />
+

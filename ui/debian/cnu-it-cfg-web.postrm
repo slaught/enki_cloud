@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ "x$1" = "xpurge" ]; then
+  /usr/sbin/deluser --system --backup --remove-home cnuit
+  /usr/sbin/deluser --system --group cnuit
+	update-rc.d cnu-it remove >/dev/null || exit $?
+else
+  exit 0;
+fi
+

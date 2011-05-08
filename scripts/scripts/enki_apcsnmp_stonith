@@ -1,0 +1,280 @@
+#!/bin/bash
+
+# Michael Vallaly (Jan '10) Ver 2.0 
+
+# This script powercycles remote servers for cluster quorum (stonith),
+#  using SNMPv3 get/set on APC PDUs.  
+
+SNMPGET_BIN="/usr/bin/snmpget"
+SNMPSET_BIN="/usr/bin/snmpset"
+
+# APC OID Codes
+I_ON="1"
+I_OFF="2"
+I_REBOOT="3"
+
+REBOOT_DURATION="5"
+
+OUTLET_NAME_OID=".1.3.6.1.4.1.318.1.1.12.3.5.1.1.2"
+OUTLET_STATUS_OID=".1.3.6.1.4.1.318.1.1.12.3.5.1.1.4"
+OUTLET_CMD_OID=".1.3.6.1.4.1.318.1.1.12.3.3.1.1.4"
+REBOOT_DUR_OID=".1.3.6.1.4.1.318.1.1.12.3.4.1.1.6"
+
+STONITH_CFG="/etc/enki/configs/ha.d/lb_heartbeat_stonith.cfg"
+
+TRIM_PDU_LABEL=1
+TRIMMED_DOMAIN="example.com"
+
+CONNECTION_TIMEOUT=15
+
+############################################################################
+
+LIST_NODES=0
+OUTLET_STATUS=0
+
+# Grab command line parameters
+ACTION=$1
+TARGET=$2
+
+# DEBUG
+#echo "STONITH DEBUG $(date +%Y%m%d%H%M): $0 $1 $2" >> /tmp/stonith.tmp
+
+# Give the manual user half a clue
+if [ "$#" -eq "0" ]; then
+  echo -e "Manual Usage Parameters: \n $0 <ACTION> [HOSTNAME]\n"
+  echo -e "    Where ACTION is one of (gethosts,off,on,reset,status)\n"
+  exit 1
+fi
+
+# Decide what we are doing
+# http://www.linux-ha.org/ExternalStonithPlugins (Required)
+case $ACTION in
+gethosts)
+        LIST_NODES=1;;
+on)
+        OUTLET_CMD=$I_ON;;
+off)   
+        OUTLET_CMD=$I_OFF;;
+reset) 
+        OUTLET_CMD=$I_REBOOT;;
+status)
+        OUTLET_STATUS=1
+        CONNECTION_TIMEOUT=2;;
+getconfignames)
+        echo ""
+        exit 0
+        ;;
+getinfo-devid)
+        echo "$0 STONITH device"
+        exit 0
+        ;;
+getinfo-devname)
+        echo "$0 STONITH external device"
+        exit 0
+        ;;
+getinfo-devdescr)
+        cat << PDUDESC
+APC Switched Rack PDU Controller via SNMPv3
+  This script reads its configuration options out of:
+  $STONITH_CFG
+  and requires no further parameters or configuration.
+PDUDESC
+        exit 0
+        ;;
+getinfo-devurl)
+        echo "http://www.apc.com/products/family/index.cfm?id=70";
+        exit 0
+        ;;
+getinfo-xml)
+        cat << PDUXML
+<parameters>
+</parameters>
+PDUXML
+	exit 0        
+        ;;
+*)      echo "Invalid Action!";
+         exit 1;;
+esac
+
+# Check for script dependencies
+for bindep in $SNMPGET_BIN $SNMPSET_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Check if we have a readable configuration file
+if [ ! -r "$STONITH_CFG" ]; then
+  echo "Can not load configuration file (${STONITH_CFG})! Exiting..."
+  exit 1
+fi
+
+# Pull in our configuration file.
+. $STONITH_CFG
+
+# Check we have a HOSTNAME for on/off/reset ACTIONS
+if [ "${TARGET}x" == "x" ] && [ "$OUTLET_CMD" != "" ]; then
+  echo "Error: This ACTION requires a HOSTNAME!"
+  exit 1
+fi
+
+# If we are just polling for status and no host is specified exit cleanly
+if [ "$OUTLET_STATUS" -eq "1" ] && [ "${2}x" == "x" ]; then
+  echo "PDU Stonith Selftest: OK"
+  exit 0
+fi
+
+# Find the hostname passed in the configuration
+for line in ${STONITH_NODES[*]}; do
+  node=`echo $line |cut -s -d: -f1`
+  if [ "`echo $node |grep -ce "$TARGET"`" -eq "1" ] && [ "$LIST_NODES" -eq "0" ]; then
+    matched=$line
+    break 
+  elif [ "$LIST_NODES" -eq "1" ]; then 
+    echo "$node"
+  fi
+done
+
+if [ "$LIST_NODES" -eq "0" ] && [ "${matched}x" != "x" ]; then
+  MGMT_IP=`echo $matched |cut -s -d: -f2`
+  OUTLET_NUM=`echo $matched |cut -s -d: -f3`
+elif [ "$LIST_NODES" -eq "1" ]; then 
+  exit 0
+elif [ "$LIST_NODES" -eq "0" ] && [ "${matched}x" == "x" ]; then
+  echo "Host ($2) was not found in the configuration.. Exiting!"
+  exit 1
+fi
+
+# Check PDU reachability via ICMP
+echo -n "Checking PDU Network Reachability: "
+if ping ${MGMT_IP} -qn -c 1 -w $CONNECTION_TIMEOUT > /dev/null; then
+  echo "OK"
+else
+  if [ "$OUTLET_STATUS" -ne "1" ]; then
+    echo "No network connectivity to PDU (${MGMT_IP}) detected! Aborting.."
+    exit 1
+  else
+    echo "Warning: No network connectivity to PDU (${MGMT_IP}) detected!"
+    exit 0
+  fi
+fi
+
+# Set SNMP options
+SNMP_OPT="-v3 -l authPriv -a MD5 -u ${STONITH_USER} -A ${STONITH_PASS} -x DES -X ${STONITH_PASS}"
+
+# Global
+snmp_status=0
+
+# Get PDU outlet name
+echo -n "Checking PDU Configuration: "
+OUTLET_NAME=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${MGMT_IP} ${OUTLET_NAME_OID}.${OUTLET_NUM} 2> /dev/null`
+let snmp_status+=$?
+
+# Fixup the returned outlet name if trimed on PDU
+if [ "${TRIM_PDU_LABEL}" == "1" ]; then
+  OUTLET_NAME="\"`echo ${OUTLET_NAME} |awk -F'"' '{print $2}'`.${TRIMMED_DOMAIN}\""
+fi
+
+# Exit if we have issues
+if [ "$snmp_status" -ne "0" ]; then
+  echo "Label request to PDU Failed! Is this a PDU device?"
+  if [ "$OUTLET_STATUS" -eq "1" ]; then
+    exit 0
+  else
+    exit 1
+  fi
+elif [ "`echo $OUTLET_NAME |awk -F'"' '{print $2}' |grep -c "$TARGET"`" -ne "1" ]; then
+  echo -e "PDU label doesn't match target (\"$OUTLET_NAME\" != \"$TARGET\")!\nBailing for safety reasons.."
+  if [ "$OUTLET_STATUS" -eq "1" ]; then
+    echo exit 0
+  else
+    echo exit 1
+  fi
+fi
+
+# Handle Status Checks
+if [ "$OUTLET_STATUS" -eq "1" ]; then
+  echo "OK"
+  exit 0
+fi 
+
+# If we are rebooting ensure we set the reboot duration to something sane
+if [ "$OUTLET_CMD" -eq "$I_REBOOT" ]; then
+   if [ "$(${SNMPGET_BIN} ${SNMP_OPT} -Ov ${MGMT_IP} ${REBOOT_DUR_OID}.${OUTLET_NUM} 2> /dev/null |awk -F': ' '{print $2}')" != "$REBOOT_DURATION" ]; then
+     if ! ${SNMPSET_BIN} ${SNMP_OPT} ${MGMT_IP} ${REBOOT_DUR_OID}.${OUTLET_NUM} i ${REBOOT_DURATION} &> /dev/null; then
+       echo "Reboot Duration SNMP set failed!"
+       exit 1
+     fi
+   fi
+fi
+echo "OK"
+
+# Print some output
+if [ "$OUTLET_CMD" -eq "$I_REBOOT" ]; then
+  cmd_result=$I_ON
+  echo -n "Sending Stonith Reboot Command: "
+else
+  cmd_result=$OUTLET_CMD
+  if [ $OUTLET_CMD -eq $I_ON ]; then 
+    echo -n "Sending Stonith ON Command: "
+  elif [ $OUTLET_CMD -eq $I_OFF ]; then
+    echo -n "Sending Stonith OFF Command: "
+  fi
+fi
+
+# Apply the outlet configuration change via SNMP 
+if ! ${SNMPSET_BIN} ${SNMP_OPT} ${MGMT_IP} ${OUTLET_CMD_OID}.${OUTLET_NUM} i ${OUTLET_CMD} &> /dev/null; then
+  echo "Outlet SNMP change failed!"
+  exit 1
+fi
+
+# Verify Status change..
+for (( x = 0; x < $(( $REBOOT_DURATION + 2 )); x++)); do
+ 
+  outlet_status=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${MGMT_IP} ${OUTLET_STATUS_OID}.${OUTLET_NUM} 2> /dev/null |awk -F': ' '{print $2}'`
+  snmp_status=$?
+
+  if [ "$outlet_status" -eq "$cmd_result" ]; then
+    echo "Success!"
+    exit 0
+elif [ "$snmp_status" -ne "0" ]; then
+    echo "SNMP FAILURE on SNMP result check!"
+    exit 1
+  else
+    # Wait a tick
+    sleep 1
+  fi 
+
+done
+
+echo "Error! PDU never responded to Stonith Request!"
+exit 1
+
+
+
+#### NOTES ####
+
+# NOTES
+
+1.3.6.1.4.1.318.1.1.12.1.1   |   rPDUIdentName
+1.3.6.1.4.1.318.1.1.12.1.3   |   rPDUIdentFirmwareRev
+1.3.6.1.4.1.318.1.1.12.1.5   |   rPDUIdentModelNumber
+1.3.6.1.4.1.318.1.1.12.1.6   |   rPDUIdentSerialNumber
+1.3.6.1.4.1.318.1.1.12.1.8   |   rPDUIdentDeviceNumOutlets
+
+# SET 
+1.3.6.1.4.1.318.1.1.12.3.3.1.1.4   |   rPDUOutletControlOutletCommand
+
+Getting this variable will return the outlet state. If the outlet is on, (1) will be returned. If the outlet is off, (2) will be returned.
+Setting this variable to (1) will immediately turn the outlet on.
+Setting this variable to (2) will immediately turn the outlet off.
+Setting this variable to (3) will immediately reboot the outlet.
+
+1.3.6.1.4.1.318.1.1.12.3.4.1.1.6   |   rPDUOutletConfigRebootDuration # In Seconds
+
+
+# STATUS
+1.3.6.1.4.1.318.1.1.12.3.5.1.1.2   |   rPDUOutletStatusOutletName
+1.3.6.1.4.1.318.1.1.12.3.5.1.1.4   |   rPDUOutletStatusOutletState
+1.3.6.1.4.1.318.1.1.12.3.5.1.1.5   |   rPDUOutletStatusCommandPending

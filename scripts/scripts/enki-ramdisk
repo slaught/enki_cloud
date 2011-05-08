@@ -1,0 +1,179 @@
+#!/bin/bash
+#
+# Michael Vallaly
+#
+# Version 1.2 (April '09)
+#
+# This script provides automated ramfs creating/destruction/syncing.
+
+DU_BIN="/usr/bin/du"
+GREP_BIN="/bin/grep"
+MOUNT_BIN="/bin/mount"
+RSYNC_BIN="/usr/bin/rsync"
+SED_BIN="/bin/sed"
+UMOUNT_BIN="/bin/umount"
+
+SUFFIX=".ramdisk"
+
+RSYNC_OPT="-aq --inplace --delete"
+##########################################################################
+ramdisk_start(){
+
+  local mountpoint=$1
+
+  if [ ! -d ${mountpoint} ]; then
+    echo "Mountpoint (${mountpoint}) doesnt exist! Exiting!" >&2
+    exit 1
+  fi 
+
+  if [ $(ls -1A ${mountpoint} |wc -l) -eq 0 ]; then
+    echo "Directory (${mountpoint}) contains no files skipping ramdisk creation.."
+    exit 0
+  fi
+
+  # Check if we have a mounted ramdisk
+  if $GREP_BIN -qe "^tmpfs ${mountpoint}${SUFFIX} tmpfs r[ow]," /etc/mtab; then 
+    echo "Ramdisk already mounted! Exiting..." >&2
+    exit 1
+  fi
+
+  # Get the mountpoint current size
+   ramdisk_size=$(( `$DU_BIN -s -B M ${mountpoint} |awk '{print $1}'|tr -d '[[:alpha:]][[:punct:]]'` + 1 ))
+
+   if ! mkdir -p ${mountpoint}${SUFFIX}; then
+     echo "Couldn't create monutpoint (${mountpoint}${SUFFIX})! Exiting..." >&2
+     exit 1
+   fi
+
+  if ! $MOUNT_BIN -t tmpfs -o size=${ramdisk_size}M,nr_inodes=15k,nosuid,mode=755 tmpfs ${mountpoint}${SUFFIX}; then
+    echo "Unable to mount ramdisk!" >&2
+    exit 1
+  fi
+
+}
+
+ramdisk_sync(){
+
+  local mountpoint=$1
+
+  if [ ! -d ${mountpoint}${SUFFIX} ]; then
+    echo "Mountpoint (${mountpoint}) isn't a ramdisk! Exiting!" >&2
+    exit 1
+  fi
+
+  if ! $GREP_BIN -qe "^tmpfs ${mountpoint}${SUFFIX} tmpfs r[ow]," /etc/mtab; then
+    echo "Ramdisk not mounted! Exiting..." >&2
+    exit 1
+  fi
+
+  # Check if we have a mounted ramdisk
+  if $GREP_BIN -qe "^${mountpoint}${SUFFIX} ${mountpoint} none r[ow],bind" /etc/mtab; then
+
+    # If so umount it
+    if ! $UMOUNT_BIN -l ${mountpoint} 2> /dev/null; then
+        echo "Error: Could not umount ramdisk!" >&2
+        exit 1
+    fi
+
+  fi
+  # Sync the data up from real disk
+  $RSYNC_BIN $RSYNC_OPT ${mountpoint}/* ${mountpoint}${SUFFIX}/
+  if [ $? -ne 0 ]; then 
+    echo "Failed to sync ${mountpoint} data to ramdisk!" >&2
+    exit 1
+  fi
+
+  # Remap ramdisk on datadir
+  if ! $MOUNT_BIN --bind ${mountpoint}${SUFFIX} ${mountpoint}; then
+    echo "Failed to bind ramdisk!.. Exiting!" >&2
+    exit 1
+  fi
+
+  # Remount read-only
+  $MOUNT_BIN -o remount,ro ${mountpoint}
+
+}
+
+ramdisk_stop(){
+
+  local mountpoint=$1
+
+  # Check if we have a mounted ramdisk
+  if $GREP_BIN -qe "^${mountpoint}${SUFFIX} ${mountpoint} none r[ow],bind" /etc/mtab; then
+
+    # If so umount the user side
+    if ! $UMOUNT_BIN -l ${mountpoint} 2> /dev/null; then
+      echo "Error: Could not umount ramdisk!" >&2
+      exit 1
+    fi
+
+  fi
+
+  if $GREP_BIN -qe "^tmpfs ${mountpoint}${SUFFIX} tmpfs r[ow]," /etc/mtab; then
+
+    # Unmount the ramdisk mountpoint
+    if ! $UMOUNT_BIN ${mountpoint}${SUFFIX} 2> /dev/null; then
+      echo "Error: Could not umount ramdisk!" >&2
+      exit 1
+    fi
+
+  fi
+
+  rmdir ${mountpoint}${SUFFIX} 2> /dev/null
+
+}
+
+# Check binary dependencies
+for bindep in $DU_BIN $GREP_BIN $MOUNT_BIN $RSYNC_BIN $SED_BIN $UMOUNT_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!" >&2
+    exit 1
+  fi
+done
+
+# Print some usage information
+usage="Usage: $0 <start|stop|restart|sync> <mountpoint>"
+
+if [ "${2}x" == "x" ] || [ "${2}" == "/" ]; then
+  echo -e $usage >&2
+  exit 1
+fi
+
+MOUNTPOINT=`echo $2 |$SED_BIN 's,/$,,'`
+
+if [ ! -d $MOUNTPOINT ]; then
+  echo "Error $MOUNTPOINT does not exist, or is not a directory!" >&2
+  exit 1
+fi
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to mount ramdisks!" >&2
+  exit 1
+fi
+
+case "$1" in
+        		start)
+                  		ramdisk_start $MOUNTPOINT;
+        		     	ramdisk_sync $MOUNTPOINT;
+                	;;
+	        	stop)
+                  		ramdisk_stop $MOUNTPOINT;
+                	;;
+ 	restart|force-reload)
+        			ramdisk_stop $MOUNTPOINT;
+                  		sleep 1;
+                  		ramdisk_start $MOUNTPOINT;
+                  		ramdisk_sync $MOUNTPOINT;
+                	;;
+        		sync)
+                  		ramdisk_sync $MOUNTPOINT;
+                	;;
+        		*)
+ 		  	echo -e $usage
+ 		  	exit 1
+                	;;
+esac
+
+exit 0
+

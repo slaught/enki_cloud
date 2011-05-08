@@ -1,0 +1,8 @@
+# Sample localization file for English. Add more files in this directory for other locales.
+# See http://github.com/svenfuchs/rails-i18n/tree/master/rails%2Flocale for starting points.
+
+# In the cfgdb, we are only using these values for commonly-used strings/constants that need to be
+# accessed from multiple locations, eg both controllers and tests
+
+en:
+  permission_denied: "Sorry, you are not allowed to access that page or action."

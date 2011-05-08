@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Report SAN disk Stats WIP
+
+AWK_BIN="/usr/bin/awk"
+GREP_BIN="/bin/grep"
+
+# Michael Vallaly (July '10)
+
+for device in `cat /etc/mtab |$GREP_BIN -e "^/dev/dm-" |$AWK_BIN '{print $1","$2}'`; do
+  
+  kdev=`basename $(echo $device |cut -d, -f1)`
+  volume=`echo $device |cut -d, -f2 |cut -d- -f6-`
+
+  cat /proc/diskstats |$GREP_BIN -we "$kdev" |$AWK_BIN -v dev="$volume" '{print dev"_read_ops:"$4"\n"dev"_sectors_read:"$6"\n"dev"_read_ms:"$7"\n"dev"_write_ops:"$8"\n"dev"_sectors_written:"$10"\n"dev"_write_ms:"$11}'
+
+done

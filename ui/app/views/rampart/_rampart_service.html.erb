@@ -1,0 +1,85 @@
+<div id="rampart_services">
+<h3>Rampart Services</h3>
+<%= render :partial => 'shared/partial_flashes' %>
+<table>
+  <tr>
+    <th>Src/Dst Network</th>
+    <th>Port</th>
+    <th>Protocol</th>
+    <th>Direction</th>
+    <th>Description</th>
+  </tr>
+<% for rs in @rampart.rampart_services %>
+  <tr>
+    <td><%= rs.network %></td>
+    <td><%= rs.port %></td>
+    <td><%= rs.protocol %></td>
+    <td><%= rs.direction %></td>
+    <td><%= rs.description %></td>
+    <% if permitted_to? :delete, :rampart %>
+    <td class="td_extra"><%= link_to_remote image_tag("/images/silk/cross.png", :alt => "Delete"),
+      :url => {:action => "remove_service", :id => rs.id}, :html => {:title => "Delete"},
+      :update => "rampart_services" %></td>
+    <% end %>
+  </tr>
+<% end %>
+</table>
+<br/>
+<% if permitted_to? :add_service, :rampart %>
+<div id="add_rampart_service">
+<% field_set_tag "Add Rampart Service" do %>
+
+<% form_remote_tag(:html => { :id => "add_service",
+        :action => { :action => "add_service", :id => @rampart.id } },
+        :url => url_for( { :action => "add_service", :id => @rampart.id } ),
+        :update => "rampart_services") do %>
+  <%= select("rampart_service_template", :id,
+    template_options,
+    {:include_blank => false},
+    :onchange => "custom_form_toggle();") %>
+  <br />
+  <br />
+  <div id="custom_service_form">
+    <%= label_tag("rampart_service[network]", "Network<span class=\"red\">*</span>") %>
+    <%= text_field_tag "rampart_service[network]", "0.0.0.0/0", :size => 10 %>&nbsp;
+    <%= label_tag("rampart_service[port]", "Port") %> 
+    <%= text_field_tag "rampart_service[port]", "", :size => 5 %>&nbsp;
+    <%= label_tag("rampart_service[protocol]", "Protocol") %>
+    <%= select("rampart_service", :protocol,
+      {"All" => "all", "TCP" => "tcp", "UDP" => "udp", "ICMP" => "icmp" },
+      {:include_blank => false}) %>&nbsp;
+    <%= label_tag("rampart_service[direction]", "Direction") %>
+    <%= select("rampart_service", :direction, {"In"=> "in", "Out" => "out"}) %>
+    <br />
+    <%= label_tag("rampart_service[description]", "Description<span class=\"red\">*</span>") %>
+    <%= text_field_tag "rampart_service[description]", "", :size => 40 %>
+    <br />
+    <%= render :partial => "shared/required_footnote" %>
+    <br />
+  </div>
+  <%= submit_tag "Add" %>
+  <% end %>
+<% end %>
+</div>
+<% end %>
+
+</div>
+
+<script type="text/javascript">
+  $j = jQuery.noConflict();   // '$' defaults to prototype. Using $j for jQuery...
+
+  $j(document).ready(function() {
+    custom_form_toggle();
+  });
+
+  function custom_form_toggle() {
+    if ($j("select#rampart_service_template_id").val() == -1)
+    {
+      $j('#custom_service_form').show();  
+    }
+    else
+    {
+      $j('#custom_service_form').hide();  
+    }
+  }  
+</script>

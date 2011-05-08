@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Michael Vallaly Sept '10
+
+# This script is the compliment to the CDN deployment script. It allows remote root ssh tunneled rsyncs via public-key solely for deployment.
+
+BASECONFIG_DIR="/data/static_content"
+RAMDISK_CTL="/etc/init.d/cdn-ramdiskctl"
+WARSYNC_CMD="/usr/sbin/warsync"
+
+# ADD the following to authorized_keys 
+#<snip>
+#command="/root/enki/scripts/validate-cdn-push",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-rsa AAAAOqE2E= 
+#</snip>
+###############################################################################
+
+#PATH CHECK
+
+case "$SSH_ORIGINAL_COMMAND" in
+  *\&*)
+  echo "Rejected"
+  ;;
+  *\(*)
+  echo "Rejected"
+  ;;
+  *\{*)
+  echo "Rejected"
+  ;;
+  *\;*)
+  echo "Rejected"
+  ;;
+  *\<*)
+  echo "Rejected"
+  ;;
+  *\`*)
+  echo "Rejected"
+  ;;
+  rsync\ --server*.\ ${BASECONFIG_DIR}*)
+  $SSH_ORIGINAL_COMMAND
+  ;;
+  CDN_PRE\ *)
+  echo -n "Stopping "
+  $RAMDISK_CTL stop
+  ;;
+  CDN_POST\ *)
+  echo -n "Starting "
+  $RAMDISK_CTL start
+  echo -n "Syncing CDN Cluster..."
+  $WARSYNC_CMD -q 45-cdn-content && echo "Done."
+  ;;
+  *)
+  echo "Rejected"
+  ;;
+esac 

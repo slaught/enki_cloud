@@ -1,0 +1,181 @@
+<% set_html_title "#{@rampart.node.to_label} (Edit)", "Ramparts" %>
+<h1>Editing Rampart</h1>
+
+<% form_for(:rampart, @rampart, :url => {:action => "update", :id => @rampart}, :html => {:class => "new_form"}) do |f| %>
+  <%= f.error_messages %>
+  <br />
+  <%= f.label :node %>
+  <%= collection_select(:rampart, :node_id, Node.all.sort_by{|n| n.to_label}, :id, :to_label,
+    {:prompt => "Select a Node"}) %>
+    <br/>
+
+  <% if permitted_to? :manage_rampart_ip, :rampart %>
+    <%= f.check_box :has_public_ip, :onclick => "toggle_public_ip(this);", :class => 'left_side' %>
+  <% else %>
+    <%= f.check_box :has_public_ip, :class => 'left_side',
+    :onclick => remote_function(:url => {:action => 'get_public_ip'},
+                                :with => "'checked=' + this.checked + '&id=#{@rampart.id}'") %>
+  <% end %>
+  <%= f.label :has_public_ip, 'Has public ip?' %>
+  <hr class="clear">
+
+  <% if permitted_to? :manage_rampart_ip, :rampart %>
+    <%= f.check_box :has_service_ip, :onclick => "toggle_locale_ip(this);", :class => 'left_side' %>
+  <% else %>
+    <%= f.check_box :has_service_ip, :class => 'left_side',
+    :onclick => remote_function(:url => {:action => 'get_locale_ip'},
+                                :with => "'checked=' + this.checked + '&id=#{@rampart.id}'") %>
+  <% end %>
+  <%= f.label :has_service_ip, 'Has service ip?' %>
+  <hr class="clear">
+    <br/>
+
+  <%= f.label :home_network %>
+  <% if permitted_to? :manage_rampart_ip, :rampart or @rampart.network_ip.nil? %>
+    <%= select(:rampart, :home_network, {"Prod" => "prod", "Dev" => "dev", "QA" => "qa", "BI" => "bi"}) %>
+  <% else %>
+    <%= ': '+@rampart.home_network %>
+    <br/>
+  <% end %>
+    <br/>
+
+  <%# f.label :access_to %>
+  <%# f.text_field :access_to %>
+  
+  <%# f.label :access_locations %>
+  <%# f.text_field :access_locations %>
+
+
+  <% field_set_tag "IP Addresses" do %>
+
+    <%= f.label :locale_ip_address %>
+    <%= f.hidden_field :locale_ip_address_id %>
+    <% if permitted_to? :manage_rampart_ip, :rampart %>
+      <%= f.text_field :locale_ip_address, :id => 'rampart_locale_ip_address',
+        :value => @rampart.locale_ip_address,
+        :disabled => @rampart.has_service_ip ? false : true %>
+      <%= hidden_field_tag 'locale_ip_stash', '' %>
+      <%= submit_to_remote "Get ip address", 'Get ip address',
+                          :html => {  :id => 'rampart_locale_ip_address_get',
+                                      :disabled => @rampart.has_service_ip ? false : true,
+                                      :style => "float:left;",
+                                      :action => {:action => "get_locale_ip_editable", :id => @rampart.id}},
+                          :url => url_for({ :action => "get_locale_ip_editable", :id => @rampart.id}) %>
+      <%= render :partial => "shared/ajax_status_messages",
+        :locals => { :tag_id => 'rampart_locale_ip_address'} %> 
+      <hr class="clear"/>
+    <% else %>
+      <div>
+      <span id="rampart_locale_ip_address" style="float:left; width:100px;">
+        <%= @rampart.locale_ip_address || '-' %>
+      </span>&nbsp;
+      <%= render :partial => "shared/ajax_status_messages",
+        :locals => { :tag_id => 'rampart_locale_ip_address' } %>
+      </div>
+    <% end %>
+    <br />
+
+    <%= f.label :network_ip_address %>
+    <% if permitted_to? :manage_rampart_ip, :rampart %>
+      <%= f.text_field :network_ip %>
+    <% else %>
+      <div><%= @rampart.network_ip || '-' %></div>
+    <% end %>
+    <br />
+
+    <%= f.label :public_ip_address %>
+    <%= f.hidden_field :public_ip_address_id %>
+    <% if permitted_to? :manage_rampart_ip, :rampart %>
+      <%= f.text_field :public_ip_address, :id => 'rampart_public_ip_address',
+        :value => @rampart.public_ip_address,
+        :disabled => @rampart.has_public_ip ? false : true %>
+      <%= render :partial => "shared/ajax_status_messages",
+        :locals => { :tag_id => 'rampart_public_ip_address'} %> 
+      <%= hidden_field_tag 'public_ip_stash', '' %>
+      <%= submit_to_remote "Get ip address", 'Get ip address',
+                          :html => {  :id => 'rampart_public_ip_address_get',
+                                      :disabled => @rampart.has_public_ip ? false : true,
+                                      :style => "float:left;",
+                                      :action => {:action => "get_public_ip_editable", :id => @rampart.id}},
+                          :url => url_for({ :action => "get_public_ip_editable", :id => @rampart.id}) %>
+      <%= render :partial => "shared/ajax_status_messages",
+        :locals => { :tag_id => 'rampart_locale_ip_address'} %> 
+      <hr class="clear"/>
+    <% else %>
+      <div>
+      <span id="rampart_public_ip_address" style="float:left; width:100px;">
+        <%= @rampart.public_ip_address || '-' %>
+      </span>&nbsp;
+      <%= render :partial => "shared/ajax_status_messages",
+        :locals => { :tag_id => 'rampart_public_ip_address' } %>
+      </div>
+    <% end %>
+  <% end %>
+
+
+  <%# f.label :locale_ip_range %>
+  <%# f.text_field :locale_ip_range %>
+
+  <%# f.label :locale_vlan %>
+  <%# f.text_field :locale_vlan %>
+
+  <%# f.label :src_port %>
+  <%# f.text_field :src_port %>
+
+  <%# f.label :dest_port %>
+  <%# f.text_field :dest_port %>
+
+  <%# f.label :nat_type %>
+  <%# f.text_field :nat_type %>
+
+  <%# f.label :remote_vlan %>
+  <%# f.text_field :remote_vlan %>
+
+  <%= f.submit "Update", :name => 'Update' %>
+  <%= link_to "Back", {:action => "list"} %>
+<% end %>
+
+<script type="text/javascript">
+function toggle_public_ip(checkbox)
+{
+  if (!checkbox.checked)
+  {
+    $('public_ip_stash').value = $('rampart_public_ip_address').value;
+    $('rampart_public_ip_address').value = '';
+    $('rampart_public_ip_address_get').disabled = true;
+  }
+  else
+  {
+    if ($('public_ip_stash').value != '')
+    {
+      $('rampart_public_ip_address').value = $('public_ip_stash').value;
+    }
+    if ($('rampart_public_ip_address_get').value == "Get ip address")
+    {
+      $('rampart_public_ip_address_get').disabled = false;
+    }
+  }
+  $('rampart_public_ip_address').disabled = !checkbox.checked;
+}
+function toggle_locale_ip(checkbox)
+{
+  if (!checkbox.checked)
+  {
+    $('locale_ip_stash').value = $('rampart_locale_ip_address').value;
+    $('rampart_locale_ip_address').value = '';
+    $('rampart_locale_ip_address_get').disabled = true;
+  }
+  else
+  {
+    if ($('locale_ip_stash').value != '')
+    {
+      $('rampart_locale_ip_address').value = $('locale_ip_stash').value;
+    }
+    if ($('rampart_locale_ip_address_get').value == "Get ip address")
+    {
+      $('rampart_locale_ip_address_get').disabled = false;
+    }
+  }
+  $('rampart_locale_ip_address').disabled = !checkbox.checked;
+}
+</script>

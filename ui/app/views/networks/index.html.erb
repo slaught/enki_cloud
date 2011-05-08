@@ -1,0 +1,41 @@
+
+<% set_html_title "Networks" %>
+<h1>Networks</h1>
+<% if permitted_to? :create, :networks %>
+<div>
+<ul>
+<li><%= link_to "Create new Network", new_network_path  %> </li>
+</ul>
+</div>
+<% end %>
+<div id="chart"></div>
+<script><%= @sparkline %></script>
+<table class="sortable">
+  <tr class="thead">
+    <th>Ip range</th>
+    <th>Vlan</th>
+    <th>Network type</th>
+    <th>Network gateway</th>
+    <th>Description</th>
+  </tr>
+<% @networks.each do |network| %>
+  <tr>
+    <td sorttable_customkey="<%= sorttable_ip(network.ip_range) %>"><%= link_to h(network.ip_range), network %></td>
+    <td><%=h network.vlan %></td>
+    <td><%=h network.network_type.to_label %></td>
+    <td><%=h network.gateway %></td>
+    <td><%=h network.description %></td>
+    <% permitted_to? :edit, :networks do %>
+      <td class="td_extra"><%= edit_link_to(edit_network_path(network)) %></td>
+    <%end %>
+  <% permitted_to? :delete, :networks do %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/cross.png", :alt => "Destroy"), 
+      network, :confirm => "Are you sure?", :method => :delete, :title => "Destroy" unless network.active? %>
+    </td> 
+  <%end %>
+  </tr>
+<% end %>
+</table>
+
+<br />
+<%= link_to 'New Network', new_network_path if permitted_to? :create, :networks %>

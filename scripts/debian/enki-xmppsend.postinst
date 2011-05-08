@@ -1,0 +1,13 @@
+#!/bin/sh
+
+oldpasswd="/etc/enki/scripts/.jabber_passwd"
+passwordfile="/etc/enki/keys/jabber_password"
+if [ ! -e ${passwordfile} ] ; then
+  if [ -e ${oldpasswd} ]; then 
+   mv ${oldpasswd} ${passwordfile}
+  else
+   echo "Warning: No Prodbot auth keys installed" 
+  fi
+fi
+
+

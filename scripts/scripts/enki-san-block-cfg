@@ -1,0 +1,44 @@
+#!/bin/bash
+# Michael Vallaly Dec '08
+
+# This script configures SAN block device settings on udev creation
+
+BLOCK_DEVICE=$1
+
+BLOCK_TIMEOUT="65"		# [30 Seconds]
+BLOCK_QUEUE_DEPTH="32"		# [128]
+BLOCK_READAHEAD="128"		# [128 kB]
+BLOCK_MAX_SECTORS="512"		# [512 kB] 
+BLOCK_IO_SCHED="noop" 		# noop anticipatory deadline [cfq]
+
+#############################################################################
+
+# Set the block device timeout
+echo "$BLOCK_TIMEOUT" > /sys/block/$BLOCK_DEVICE/device/timeout
+
+# Set the block device queue depth
+echo "$BLOCK_QUEUE_DEPTH" > /sys/block/$BLOCK_DEVICE/queue/nr_requests
+
+# Set the block device read-ahead
+echo "$BLOCK_READAHEAD" > /sys/block/$BLOCK_DEVICE/queue/read_ahead_kb
+
+# Set the block device maximum hardware sector size
+echo "$BLOCK_MAX_SECTORS" > /sys/block/$BLOCK_DEVICE/queue/max_sectors_kb
+
+# Set the block device scheduler
+echo "$BLOCK_IO_SCHED" > /sys/block/$BLOCK_DEVICE/queue/scheduler
+
+# Drop the Cache
+# echo 1 >/proc/sys/vm/drop_caches
+
+
+# NOTES: http://www.fz-juelich.de/jsc/datapool/jugene/JUGENE_RedPaper_PerfAnalysisTools_0811.pdf
+
+#Parameter 		Default Value 	Required Value 	Description
+#max_hw_sectors_kb 	512 		32767 		Maximum IO size, in sectors, that can be issued to a device
+#max_hw_segments 	255 		256 		Size of the scatter gather table available to be used to coalesce IO requests
+#max_phys_segments 	128 		128 		Maximum scatter gather list length
+#max_sectors_kb		512 		8192 		Largest possible IO’s going to disk
+#nr_requests 		128 		4 		Number of outstanding requests to disk subsystem
+#read_ahead_kb 		512 		2048 		Maximum size of read ahead operations
+#scheduler 		cfq 		Noop 		Linux I/O Elevator

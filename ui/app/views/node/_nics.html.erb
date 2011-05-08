@@ -1,0 +1,59 @@
+<div id="node_nics" class="node_data">
+<h2>Nics</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table class="nics">
+<tr>
+  <th>Type</th>
+  <th>Port</th>
+  <th>Mac Address</th>
+</tr>
+<% for nic in node.nics %>
+<tr><td><%= nic.network_type %></td>
+<td><%= nic.port_name %></td>
+<td><%= nic.mac_address %></td>
+  <% unless node.node_type.is_virtual? then %>
+  <% permitted_to? :remove_nic, :node do %>
+     <td class="td_extra">
+    <% form_remote_tag(:html => {:id=>"remove_nic_#{nic.nic_id}",
+         :action => { :action => "remove_nic", :id => node.id}},
+         :url => url_for({ :action => "remove_nic", :id => node.id}), 
+         :update => 'node_nics') do  %>
+    <%= hidden_field_tag( "nic", nic.nic_id ) %>
+    <%= image_submit_tag "silk/delete.png", :confirm => 'Are you sure?', :title => "Remove Nic" %>
+    <% end %>
+    </td>
+  <% end %>
+  <% end %>
+  </tr>
+<% end %>
+</table>
+<% permitted_to? :add_nic, :node do %>
+<div>
+  <% form_remote_tag(:html => {:id=>"add_nic",
+         :action => { :action => "add_nic", :id => node.id}},
+         :url => url_for({ :action => "add_nic", :id => node.id}), 
+         :update => 'node_nics') do   %>
+  <table class="form_table">
+  <colgroup><col class="first" /><col class="entry_col" /></colgroup>
+  <!-- <tr><td>Switch</td><td>Port</td></tr>  -->
+  <tr>
+  <% if node.node_type.is_virtual? then %>
+    <td><%= submit_tag "Create Virtual Nics"  %></td>
+  <% else %>
+    <td>Type</td>
+    <td><%= select("nic", :network_type, [['Lan','lan'],['San','san']]) %></td>
+    </tr><tr>
+    <td>Port</td>
+    <td><%= text_field_tag "nic[port_name]", '', :size => 10 %></td> 
+    </tr><tr>
+    <td>Mac Address</td>
+    <td><%= text_field_tag "nic[mac_address]", '' , :size => 18  %></td> 
+    </tr><tr><td></td>
+    <td><%= submit_tag "Add"  %></td>
+  <% end %>
+  </tr>
+  </table>
+  <% end %>
+</div>
+<%end %>
+</div>

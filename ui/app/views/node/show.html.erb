@@ -1,0 +1,118 @@
+<% set_html_title(@node.to_label, "Nodes") %>
+
+<h1><%= @node.hostname %>&nbsp;<%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"), {:action => "edit", :id => @node.id}, {:title => "Edit"} if permitted_to? :edit, :node %></h1>
+<% unless @node.active? %>
+<h2 style="color: red">Not Active</h2>
+<% end %>
+<div class="node_live_data" class="node_live_data">
+  <h3>Live Node Data</h3>
+  <ul>
+  <% unless @node.mgmt_ip_address.nil? -%>
+  <li><a href="http://<%= ip(@node.mgmt_ip_address) %>/status">Node Status</a></li>
+  <% end -%>
+  <li><%= nagios_link(@node, "Nagios Detail") %></li>
+  </ul>
+  <% if @node.node_type.is_physical? and permitted_to? :push_vlan, :node %>
+  <h3>Push</h3>
+  <ul>
+    <li><%= link_to "VLAN", :action => "push_vlan", :id => @node %></li>
+  </ul>
+  <% end %>
+</div>
+<dl>
+<% { :id => "node_hostname_edit_#{@node.node_id}" } %>
+<% if @node.active? %>
+  <dt>FQDN</dt><dd><%= @node.fqdn %></dd>
+  <% unless @node.os_version.nil? then %>
+    <dt>OS/Kernel</dt>
+    <dd><%= @node.os_version.distribution %>(<%= @node.os_version.kernel %>)</dd>
+  <% end %>
+  <dt>Datacenter</dt> <dd><%= @node.datacenter.name %></dd>
+<% end %>
+<% if permitted_to? :edit, :node %>
+  <dt>Hostname</dt>
+  <dd>
+  <%= editable_content_inline(
+      @node,:hostname,
+      :content => {
+        :element => 'span',
+        :text => @node.hostname ,
+        :options => { :class => 'editable-content' }
+       },
+      :url => {
+        :action => 'update_partial',
+       },
+      :ajax => {
+        :okText => "Change",
+        :cancelText => "Nevermind"
+       }
+    ) %>
+</dd>
+<% end %>
+<dt>Managment IP</dt>
+<dd>
+<% if permitted_to? :manage, :node %>
+  <%= editable_content_inline(
+      @node,:mgmt_ip_address,
+      :content => {
+        :element => 'span',
+        :text => @node.mgmt_ip_address,
+        :options => { :class => 'editable-content' }
+       },
+      :url => {
+        :action => 'update_partial',
+       },
+      :ajax => {
+        :okText => "Change",
+        :cancelText => "Nevermind"
+       }
+    ) %>
+<% else %>
+<span id="edit_mgmt_ip_address"><%= @node.mgmt_ip_address %></span>
+<% end %>
+</dd>
+<dt>Machine</dt> <dd>
+<% if @node.model then %>
+  <%= @node.model.description %>
+<% elsif @node.node_type.is_virtual? then %>
+Default 4 gb/2 cpu web application node 
+<% end %>
+</dd>
+<dt>Type</dt><dd> <%= @node.node_type.name %></dd>
+<% if @node.node_type.is_physical? %>
+<dt>VLANs</dt><dd> <%= @node.vlans.sort * ", " %></dd>
+<% end %>
+</dl>
+
+<%= render :partial => 'clusters', :locals => {:node => @node} %>
+
+<% if @node.node_type.is_virtual? or @node.is_xen_dom0? %>
+<%= render :partial => 'xen', :locals => {:node => @node }  %>
+<% end %>
+
+<%= render :partial => 'nics', :locals => {:node => @node }  %>
+
+<% if @node.node_type.can_has_switch_port?  %>
+  <%= render :partial => 'switch_ports', :locals => {:node => @node }  %>
+<% end %>
+
+<% if @node.node_type.can_has_disk? %>
+<%= render :partial => 'disks', :locals => {:node => @node} %> 
+<%end %>
+
+<% if @node.node_type.can_has_pdu? or @node.node_type.is_pdu? %>
+<%= render :partial => 'pdus', :locals => {:node => @node} %> 
+<%end %>
+
+<% if @node.node_type.can_has_serial_console?  %>
+<%= render :partial => 'serial_consoles', :locals => {:node => @node} %> 
+<%end %>
+
+<%= render :partial => 'san', :locals => {:node => @node} %> 
+<%= render :partial => 'versions', :locals => {:node => @node} %>
+
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", :action => "edit", :id => @node.id if permitted_to? :edit, :node %></li>
+  <li><%= link_to "Listing", :action => "list" %></li>
+  <li><%= link_to "Delete", { :action => "destroy", :id => @node.id }, :confirm => "Are you sure you want to delete this node?" if permitted_to? :delete, @node %></li>
+</ul>

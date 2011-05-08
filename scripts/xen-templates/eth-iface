@@ -1,0 +1,6 @@
+
+# Xen Generated Interface for %INTERFACE%
+
+iface %INTERFACE% inet static
+address %ADDRESS%
+netmask %NETMASK%

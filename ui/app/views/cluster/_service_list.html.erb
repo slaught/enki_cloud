@@ -1,0 +1,55 @@
+<div id="cluster_services" class="node_data">
+<h2>Services</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table>
+<tr>
+  <th>Name</th>
+  <th>HA IP</th>
+  <th>HA Port</th>
+  <th>URI Schema</th>
+  <th>Hostname</th>
+  <th>Local Port</th>
+  <th>Availability</th>
+</tr>
+<% for service in services %>
+<tr>
+<td><%= link_to service.name, :action => "show", :controller => 'service', :id => service %></td>
+<td><%= service.ha_ip_address %></td>
+<td><%= service.ha_port %>/<%= service.ha_proto%></td>
+  <% unless service.url.nil?  %>
+<td><%= service.ha_protocol %></td>
+<td><%= service.ha_hostname %></td>
+  <% else %>
+<td></td>
+<td></td>
+  <% end %>
+<td><%= service.localport %></td>
+<td><%= service.availability%></td>
+  <% permitted_to? :remove_from_cluster, service do %>
+     <td>
+      <% form_remote_tag(:html => {:id=>"remove_service_#{service.service_id}",
+             :action => { :action => "remove_service", :id => cluster.id}},
+             :url => url_for({ :action => "remove_service", :id => cluster.id}), 
+             :update => 'cluster_services') do  %>
+        <%= hidden_field_tag( "service", service.service_id) %>
+        <%= submit_tag "Remove" %>
+      <% end %>
+    </td>
+  <% end %>
+
+</tr>
+<% end %>
+</table>
+<% if not potential_services(cluster).empty? then %>
+  <p>
+    <% form_tag( url_for({ :action => "add_service", :id => cluster.id}), :method => 'post',
+           :id=>"add_service_to_cluster", 
+           :onsubmit => "return remote_form_tag('cluster_services', this);") do  %>
+      <div id="service_service_id_too" name="service[service_id_too]"></div>
+      <%= collection_select(:service, :service_id, potential_services(cluster), :service_id, :to_label) %>
+      <%= submit_tag "Add Service" %>
+    <% end %>
+  </p>
+<% end %>
+
+</div>

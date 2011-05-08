@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Bogon filtering script Ver 2.0
+
+# Michael Vallaly (Jan '11)
+
+BOGON_NETWORK_FILE="/etc/enki/configs/node/invalid-networks.bogon"
+AWK_BIN="/usr/bin/awk"
+IP_BIN="/bin/ip"
+IPTABLES_BIN="/sbin/iptables"
+IPTABLES_RESTORE_BIN="$IPTABLES_BIN-restore"
+GREP_BIN="/bin/grep"
+
+ULOG_GROUP="1"
+
+#########################################################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to modify firewall!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $AWK_BIN $IP_BIN $IPTABLES_BIN $IPTABLES_RESTORE_BIN $GREP_BIN $SED_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Get our public interface
+PUBLIC_INTERFACE=`$IP_BIN route show |$GREP_BIN -e "^default via " |$AWK_BIN '{print $5}'`
+
+if [ ${PUBLIC_INTERFACE}x == "x" ]; then
+  echo "Invalid public network interface! Exiting..."
+  exit 1
+fi
+
+destroy_bogon_filter () {
+  $IPTABLES_BIN -t mangle -D PREROUTING -i ${PUBLIC_INTERFACE} -j BOGON_REJECT 2> /dev/null
+  $IPTABLES_BIN -t mangle -F BOGON_REJECT 2> /dev/null
+  $IPTABLES_BIN -t mangle -X BOGON_REJECT 2> /dev/null
+}
+
+# Handle Stop commands
+if [ "`echo $1 |$GREP_BIN -ic 'stop'`" -ne 0 ]; then
+  echo -n "Stopping Bogon filter.. "
+  destroy_bogon_filter
+  echo "Done."
+  exit 0
+fi
+
+if [ ! -e $BOGON_NETWORK_FILE ] || [ ! -r $BOGON_NETWORK_FILE ]; then
+  echo "Cannot open/read ${BOGON_NETWORK_FILE}.. Exiting!"
+  exit 1
+fi 
+
+# Flush Filter Table
+echo -n "Applying `cat $BOGON_NETWORK_FILE |$GREP_BIN -e '-j DROP' -e '-j RETURN' |wc -l` Bogon filters... "
+destroy_bogon_filter
+$IPTABLES_BIN -t mangle -N BOGON_REJECT
+
+# Bulkload Bogon Filters
+cat $BOGON_NETWORK_FILE |sed -e "s/%PUBLIC_INTERFACE%/${PUBLIC_INTERFACE}/g" -e "s/%ULOG_GROUP%/${ULOG_GROUP}/g" |$IPTABLES_RESTORE_BIN -n
+
+if [ $? -ne 0 ]; then 
+  echo "Problems applying Bogon filters.. Aborting!"
+  exit 1
+else
+  $IPTABLES_BIN -t mangle -I PREROUTING -i ${PUBLIC_INTERFACE} -j BOGON_REJECT 2> /dev/null
+fi
+
+echo "Done."

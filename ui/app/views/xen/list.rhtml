@@ -1,0 +1,26 @@
+<% set_html_title "Xen Mappings" %>
+<h1>Xen Mappings</h1>
+<div>
+<ul>
+  <li><%= link_to 'Assign a Host Mapping', :action => 'new' %></li>
+  <li><%= link_to 'Compare against live mappings', :action => 'compare' %></li>
+</ul>
+
+</div>
+<table class="sortable">
+  <tr>
+  <th>DomO Host</th>
+  <th>DomU Host</th>
+  <th>Switch Ports</th>
+  </tr>
+<% for i in @nodes %>
+  <tr>
+    <td><%= link_to "#{i.host.fn_prefix}", :controller => 'node', :action => "show", :id => i.host %></td>
+    <td><%= link_to "#{i.guest.fn_prefix}", :controller => 'node', :action => "show", :id => i.guest%></td>
+    <td><%= i.host.network_switch_ports.map {|p| p.port }.join(', ')%></td>
+    <td class="td_extra"><%= link_to "Destroy", {:action => "destroy", :id => i}, { :confirm => "Are you sure?", :method => :post } if permitted_to? :delete, :xen %></td>
+  </tr>
+<% end %>
+</table>
+<br />
+<%= link_to 'New', :action => 'new' %> 

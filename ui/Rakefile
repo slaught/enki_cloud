@@ -1,0 +1,161 @@
+# Add your own tasks in files placed in lib/tasks ending in .rake,
+# for example lib/tasks/capistrano.rake, and they will automatically be available to Rake.
+
+require(File.join(File.dirname(__FILE__), 'config', 'boot'))
+
+require 'rake'
+require 'pathname'
+
+# This is stupid
+require 'rubygems'
+require 'rubygems/gem_runner'
+
+require 'rake/testtask'
+require 'rake/rdoctask'
+require 'tasks/rails'
+
+Rake.application.options.trace_rules = false
+Rake.application.options.trace = false
+Rake.application.options.silent = true 
+RakeFileUtils.verbose_flag=false
+
+Rake::TaskManager.class_eval do
+  def remove_task(task_name)
+    @tasks.delete(task_name.to_s)
+  end
+end
+
+def remove_task(task_name)
+  Rake.application.remove_task(task_name)
+end
+
+#def rsync(args='')
+#  sh "rsync #{args} #{RSYNC_ARGS}"
+#end
+#namespace :deploy do
+#  desc "See what a deploy would do"
+#  task :test => [] do
+#    rsync "-n" 
+#  end
+#  desc "Push code to somewhere."
+#  task :push => [] do
+#    rsync 
+#  end
+#end
+
+
+namespace :db do
+  namespace :test do
+    remove_task :"db:test:clone"
+    remove_task :"db:test:clone_structure"
+    remove_task :"db:test:prepare"
+    remove_task :"db:test:purge"
+    task :purge=> [] do
+      puts 'bad'
+    end
+    task :clone => [] do
+    end
+    task :prepare => [] do
+    end
+    task :clone_structure => [] do
+    end
+  end
+end # end db namespace
+
+#rake db:fixtures:identify            # Search for a fixture given a LABEL or ID.
+#rake db:fixtures:load                # Load fixtures into the current environment's database.
+#rake db:reset                        # Drops and recreates the database from db/schema.rb for the current environment.
+#rake db:rollback                     # Rolls the schema back to the previous version.
+#rake db:schema:dump                  # Create a db/schema.rb file that can be portably used against any DB supported by AR
+#rake db:schema:load                  # Load a schema.rb file into the database
+#rake db:structure:dump               # Dump the database structure to a SQL file
+#rake db:test:clone_structure         # Recreate the test databases from the development structure
+#rake db:test:load                    # Recreate the test database from the current schema.rb
+#rake db:test:prepare                 # Check for pending migrations and load the test schema
+#rake db:version                      # Retrieves the current schema version number
+
+fixture_files = %Q(
+locations.csv
+sans.yml
+services.yml
+clusters.yml
+nics.csv
+database_cluster
+cnu_machine_models.yml
+nodes.csv
+cluster_nodes.yml
+cluster_services.csv
+san_nodes.csv
+pdus.csv
+users.yml
+user_roles.yml
+network_switch_ports.yml
+node_nics.yml
+)
+#  disk_types.yml
+# roles.yml
+#node_nics.csv
+#  disks           
+#  node_disks       
+#  service_locations 
+#  xen_mappings       
+#disk_types.csv
+#protocols.csv
+#node_type.csv
+#datacenters.csv
+# os_versions.csv
+# distributions.csv
+
+
+ENV['FIXTURES']=fixture_files.split(' ').join(',')
+
+namespace :db do
+namespace :fixtures do
+	desc	"'Properly' deletes fixture data from tables before re-loading it"
+	task :delete => :environment do
+		require 'active_record/fixtures'
+		ActiveRecord::Base.establish_connection(:test )
+    fixture = %Q(locations sans services clusters nics database_clusters database_names 
+    cnu_machine_models nodes cluster_nodes cluster_services database_cluster_database_names
+    san_nodes pdus network_switch_ports node_nics xen_mappings).split(' ').reverse.join(";DELETE FROM ")
+		ActiveRecord::Base.connection.execute "DELETE FROM #{fixture};"
+    # "DELETE FROM #{fixture_name};"
+		#fixture.reverse.each do |fixture_name|
+		#end
+	  
+	end
+end
+end
+
+
+#task(:default => [:test_units])
+
+#desc "Run the unit tests in test/unit"
+#Rake::TestTask.new("test_units") { |t|
+#  test_dir = 'test'
+#  t.libs << 'lib' 
+#  t.libs << '.' 
+#  t.libs << test_dir
+#  t.pattern = "#{test_dir}/**/*_test.rb"
+#  t.verbose = false
+#}
+#task :test_units => [ :clone_structure_to_test ]
+
+desc "Run production console"
+task :console do 
+  sh 'sudo -u cnuit script/console  production'
+end
+
+desc "Create a new cfg db user with sysadmin privileges"
+task :create_user do
+  sh File.join(RAILS_ROOT, 'bin', 'create_user.rb')
+end
+
+namespace :test do
+  Rake::TestTask.new(:javascript => "db:test:prepare") do |t|
+    t.libs << "test"
+    t.pattern = 'test/javascript/**/*_test.rb'
+    t.verbose = true
+  end
+  Rake::Task['test:javascript'].comment = "Run the (SLOW) javascript tests in test/javascript"
+end

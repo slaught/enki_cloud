@@ -1,0 +1,9 @@
+<% set_html_title "Create New Network" %>
+<h1>New Network</h1>
+
+<% form_for(@network) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f, :network_types => @network_types } %> 
+
+<p><%= f.submit "Create" %></p>
+<% end %>
+<%= link_to 'List', networks_path %>

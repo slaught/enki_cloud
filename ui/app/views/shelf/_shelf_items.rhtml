@@ -1,0 +1,18 @@
+<table border="1" class="sortable">
+<tr class="thead"><th>Name</th><th>HA IP Address</th><th>hostname</th><th>Ports</th><th>Protocols</th><th>Description</th></tr>
+<% for i in @formatted do %>
+<tr>
+<td><%= link_to i.first, :action => "show_name", :controller=>"service", :id => i.first.first %></td>
+<% i.shift %>
+<% for j in i do %>
+<td <%= "sorttable_customkey=\"#{sorttable_ip(j)}\"" if j.class != Array and is_ip? j %>>
+<% if j.class == Array %>
+<%= j.join(', ') %>
+<%else %>
+<%= j %>
+<%end %>
+</td>
+<%end%>
+</tr>
+<%end%>
+</table>

@@ -1,0 +1,48 @@
+<% set_html_title "#{@cluster.to_label} (Edit)", "Clusters" %>
+<h1>Editing Cluster: <%= @cluster.cluster_name %></h1>
+
+<% form_for(:cluster, @cluster, :url => {:action => 'update', :id => @cluster },
+  :html => {:class => "new_form"}) do |f| %>
+  <%= f.error_messages %>
+
+  <%= f.label :cluster_name %><br />
+  <% if permitted_to? :change, :cluster then %>
+    <%= f.text_field :cluster_name  %>
+  <% else %>
+    <%= f.text_field :cluster_name, :disabled => 'disabled' %>
+  <% end %>
+
+  <%= f.label :description  %><br />
+  <%= f.text_field :description %>
+
+  <%= f.label :vlan      %><br />
+  <%if  permitted_to? :change, :cluster then %>
+    <%= f.text_field :vlan    %> 
+  <% else %>
+    <span class="display_field"><%= @cluster.vlan %></span>
+  <% end %>
+
+  <%= f.label "IP Network" %><br />
+  <%if permitted_to? :change, :cluster then %>
+    <%= f.text_field :ip_range   %> 
+  <% else %>
+    <span class="display_field"><%= @cluster.ip_range %></span> 
+  <% end %>
+
+  <%= f.label :fw_mark, 'Forward mark', :class => 'left_side' %><br /> 
+  <span class="display_field"><%= @cluster.fw_mark %></span>
+
+  <%= f.label :load_balanced, 'Load balanced?', :class => 'left_side' %>
+  <%if permitted_to? :change, :cluster then %>
+    <%= f.check_box :load_balanced, :class => 'left_side' %>
+  <% else %>
+    <span class="display_field"><%= @cluster.load_balanced?.to_s %></span>
+  <% end %>
+  <hr class="clear">
+
+    <%= f.submit "Save Changes" %>
+<% end %>
+
+
+<%= link_to 'Show', :action => 'show', :id => @cluster %> |
+<%= link_to 'Back', :action => 'list' %>

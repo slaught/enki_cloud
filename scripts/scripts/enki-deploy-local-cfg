@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# ENKI Local Config Deployment Script 1.0
+
+# Provides the bare minimum for reliable networking / ethernet device enumeration
+
+# Michael Vallaly Dec '08
+
+ENKI_CFG_BASE="/etc/enki/configs/node"
+DMI_DECODE_BIN="/usr/sbin/dmidecode"
+WGET_BIN="/usr/bin/wget"
+
+HOSTNAME_INIT="/etc/init.d/hostname.sh"
+
+BOOTSTRAP_BASE_URL="http://bootstrap.example.com/uuid"
+
+WARNING_WAIT=5
+
+#TODO failback to a working interface file 
+#TODO handle enki-firewall reloads
+#TODO check if we are cluster-master..
+
+#############################################
+
+usage="USAGE: $0 -h [fqdn]"
+
+if [ $# -ge 1 ]; then
+  while getopts "fh:" options; do
+    case $options in
+      f ) echo "** WARNING ** Bootstraping local node config in $WARNING_WAIT seconds!.. [Ctrl-C if you are unsure!]"
+          sleep $WARNING_WAIT;
+          rm -rf '/etc/enki/configs/node';;
+      h ) HOST=$OPTARG;
+          echo "Configuring using passed hostname ($HOST)..";;
+     \? ) echo $usage
+         exit 1;;
+      * ) echo $usage
+         exit 1;;
+    esac
+  done
+fi 
+
+# Check for the bare minimum local configs
+if [ ! -d ${ENKI_CFG_BASE} ]; then
+
+  # Ensure the directory exists
+  mkdir -p ${ENKI_CFG_BASE}
+
+  # Fixup system configs
+  ln -sf ${ENKI_CFG_BASE}/interfaces /etc/network/interfaces
+  ln -sf ${ENKI_CFG_BASE}/udev.rules /etc/udev/rules.d/70-persistent-net.rules
+
+  # Grab our UUID from DMI DECODE
+  UUID=`$DMI_DECODE_BIN --string system-uuid`
+
+  if [ "${UUID}x" == "x" ]; then
+    echo "Cannot determine UUID for local machine.. Bootstrap failed!"
+    exit
+  fi
+
+  # Fetch our configs from the bootstrap server
+  echo -n "Fetching local configuration for uuid (${UUID}) from bootstrap server... "
+  cd ${ENKI_CFG_BASE}
+  $WGET_BIN -r -np -nH --cut-dirs=2 -L -R "index.html*" -X "icons" ${BOOTSTRAP_BASE_URL}/${UUID}/ 2> /dev/null
+  WGET_STATUS=$?
+  echo "Done."
+
+  # Check WGET Status
+  if [ $WGET_STATUS -ne 0 ]; then
+    echo "Local wget configuration bootstrap for uuid (${UUID}) failed!"
+    exit 1
+  fi 
+
+  # Check for OS_VERSION file
+  if [ -r ${ENKI_CFG_BASE}/OS_VERSION ]; then
+    # Source our cfg
+    . ${ENKI_CFG_BASE}/OS_VERSION
+    echo "Configuring using BOOTSTRAPPED hostname ($HOSTNAME).."
+    echo $HOSTNAME > /etc/hostname
+    sed -i -e "/^127.0.0.1/c\\127.0.0.1 $HOSTNAME `echo $HOSTNAME |cut -d. -f1,2` localhost" /etc/hosts
+    if [ -x "$HOSTNAME_INIT" ]; then $HOSTNAME_INIT; fi
+    HOST=$HOSTNAME
+  else
+    echo "No OS_VERSION file found on bootstrap server.. Bailing!"
+    exit 1
+  fi 
+
+else
+ echo "Configuring using local hostname ($HOSTNAME).."
+ HOST=$HOSTNAME
+fi
+
+#TODO generate the hostname/location pair
+ENKI_HOST_LOC=`echo $HOST |cut -d. -f1,2`
+
+if [ -d ${ENKI_CFG_BASE}/${ENKI_HOST_LOC} ]; then
+
+  cd $ENKI_CFG_BASE
+
+  # Symlink in network interfaces
+  if [ -e "${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.interfaces" ]; then
+    echo "Applying network interfaces file."
+    ln -sf ${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.interfaces ${ENKI_CFG_BASE}/interfaces
+  else
+    echo "Skipping non-existent network interfaces file."
+  fi
+
+  # Symlink in udev network file
+  if [ -e "${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.udev.rules" ]; then
+    echo "Applying network udev rules."
+    ln -sf ${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.udev.rules ${ENKI_CFG_BASE}/udev.rules
+  else
+    echo "Skipping non-existent network udev rules."
+  fi
+
+  # Symlink in network services file
+  if [ -e "${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.net.services" ]; then
+    echo "Applying network services file."
+    ln -sf ${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.net.services ${ENKI_CFG_BASE}/net.services
+  else
+    echo "Skipping non-existent network services file."
+  fi
+
+  # Symlink in load balancer services file
+  if [ -e "${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.lb.services" ]; then
+    echo "Applying load balancer services file."
+    ln -sf ${ENKI_HOST_LOC}/${ENKI_HOST_LOC}.lb.services ${ENKI_CFG_BASE}/lb.services
+  else
+    echo "Skipping non-existent load balancer services file."
+  fi
+
+else
+  echo "Host configuration does not exist! Exiting.."
+  exit 1
+fi

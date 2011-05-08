@@ -1,0 +1,197 @@
+#! /bin/bash
+#
+# Michael Vallaly (Nov 09)
+#
+# Description:
+#
+# This plugin checks the health of APC PDUs using SNMPv3
+#
+# Usage: ./check_apc_health -C(acti) or -N(agios) 
+
+# Binary Dependencies
+BC_BIN="/usr/bin/bc"
+SNMPGET_BIN="/usr/bin/snmpget"
+
+# PDU Authentication
+NAGIOS_USER="apcmon"
+NAGIOS_PASS="sholahph4ohGhikae6so"
+
+WARNING_PERCENT="75"
+CRITICAL_PERCENT="80"
+
+#########################################################################################
+
+# APC OIDs
+DEVICE_RATING_AMPS_OID="1.3.6.1.4.1.318.1.1.12.1.7.0"
+NUM_OF_OUTLETS_OID="1.3.6.1.4.1.318.1.1.12.1.8.0"
+NUM_OF_BANKS_OID="1.3.6.1.4.1.318.1.1.12.2.1.4.0"
+MAX_BANK_LOAD_AMPS_OID="1.3.6.1.4.1.318.1.1.12.2.1.3.0"
+BANK_LOAD_TAMPS_OID=".1.3.6.1.4.1.318.1.1.12.2.3.1.1.2"
+
+# Globals
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+# Nagios Counters
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+# Print our usage line
+usage="Usage: ./check_apc_health -C(acti) or -N(agios) -h(ostname)\n\n
+\t-N  Nagios Check Output\n
+\t-C  Cacti Graph Output\n\n
+\t-h  Hostname of PDU\n
+\t-c  Critical Threshold (percent)\n
+\t-w  Warning Threshold (percent)\n"
+
+# Check our parameters and set the service_type 
+while getopts "CNh:c:w:" options; do
+  case $options in
+    C ) service_type="cacti";;
+    N ) service_type="nagios";;
+    h ) PDU_HOST="$OPTARG";;
+    c ) CRITICAL_PERCENT="$OPTARG";;
+    w ) WARNING_PERCENT="$OPTARG";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check our passed parameters
+if [ "${service_type}" == "" ] || [ "${PDU_HOST}x" == "x" ]; then
+  echo -e $usage
+  exit $STATE_UNKNOWN
+fi 
+
+# Check for script dependencies
+for bindep in $BC_BIN $SNMPGET_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Check PDU reachability via ICMP
+if ! ping ${PDU_HOST} -qn -c 1 -w 10 &> /dev/null; then
+  echo "No network connectivity to PDU (${PDU_HOST}) detected!"
+  exit $STATE_CRITICAL
+fi
+
+# Set SNMP options
+SNMP_OPT="-v3 -l authPriv -a MD5 -u ${NAGIOS_USER} -A ${NAGIOS_PASS} -x DES -X ${NAGIOS_PASS}"
+
+# Do the SNMP work
+snmp_status=0
+DEVICE_RATING_AMPS=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${PDU_HOST} ${DEVICE_RATING_AMPS_OID} 2> /dev/null`
+snmp_status+=$?
+NUM_OF_BANKS=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${PDU_HOST} ${NUM_OF_BANKS_OID} 2> /dev/null`
+snmp_status+=$?
+BANK_MAX_AMPS=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${PDU_HOST} ${MAX_BANK_LOAD_AMPS_OID} 2> /dev/null`
+snmp_status+=$?
+
+# Check if SNMP GETs errored 
+if [ $snmp_status -gt 0 ]; then
+  echo "SNMP Failure! Are you sure this is an APC PDU?"
+  exit $STATE_CRITICAL
+else
+  # Trim the SNMP output
+  DEVICE_RATING_AMPS=`echo $DEVICE_RATING_AMPS |cut -s -d' ' -f2`
+  NUM_OF_BANKS=`echo $NUM_OF_BANKS |cut -s -d' ' -f2`
+  BANK_MAX_AMPS=`echo $BANK_MAX_AMPS |cut -s -d' ' -f2`
+
+fi
+
+# Get acutal MAX values from derated APC reported values
+DEVICE_RATING_AMPS=`echo "$DEVICE_RATING_AMPS * 1.25" |$BC_BIN |cut -d. -f1`
+BANK_MAX_AMPS=`echo "$BANK_MAX_AMPS * 1.25" |$BC_BIN |cut -d. -f1`
+
+# Set the Critical and Warning thresholds
+BANK_WARNING_TAMPS=`echo "( ${BANK_MAX_AMPS} * .${WARNING_PERCENT} ) * 10" |$BC_BIN`
+BANK_CRITICAL_TAMPS=`echo "( ${BANK_MAX_AMPS} * .${CRITICAL_PERCENT} ) * 10" |$BC_BIN`
+PDU_WARNING_TAMPS=`echo "( ${DEVICE_RATING_AMPS} * .${WARNING_PERCENT} ) * 10" |$BC_BIN`
+PDU_CRITICAL_TAMPS=`echo "( ${DEVICE_RATING_AMPS} * .${CRITICAL_PERCENT} ) * 10" |$BC_BIN`
+
+TOTAL_TAMPS=0
+
+# Handle Bank Checking
+for bank in `seq 1 $((${NUM_OF_BANKS} + 1))`; do 
+  
+  # Get the individual bank info 
+  tamps=`${SNMPGET_BIN} ${SNMP_OPT} -Ov ${PDU_HOST} ${BANK_LOAD_TAMPS_OID}.${bank} 2> /dev/null`
+  if [ $? -eq 0 ]; then
+  
+    # Trim the SNMP output
+    tamps=`echo $tamps |cut -d: -f2`
+ 
+    # Re-zero TOTAL_TAMPS if more than one bank as first index'ed value is TOTAL
+    if [ $bank -eq 2 ]; then
+      TOTAL_TAMPS=0
+    fi
+
+    # If we want nagios output
+    if [ "$service_type" == "nagios" ] && [ $bank -ne 1 ]; then
+
+      output_status+="Bank$((${bank} - 1)) Amps (`echo "${tamps} * 0.10" |$BC_BIN`/`echo "${BANK_CRITICAL_TAMPS} * 0.10" |$BC_BIN`) "
+
+      if [ "`echo "$tamps > $BANK_CRITICAL_TAMPS" |$BC_BIN`" -eq 1 ]; then
+        CRIT_COUNT=1
+        output_status+="- OVERLOAD! "
+      elif [ "`echo "$tamps > $BANK_WARNING_TAMPS" |$BC_BIN`" -eq 1 ]; then
+        WARN_COUNT=1
+        output_status+="- WARNING! "  
+      else
+        output_status+="- OK "
+      fi
+    elif [ "$service_type" == "cacti" ] && [ $bank -ne 1 ]; then
+       output_status+="Bank$((${bank} - 1)) Amps:`echo "${tamps} * 0.10" |$BC_BIN`:`echo "${BANK_CRITICAL_TAMPS} * 0.10" |$BC_BIN`:0\n" 
+    fi
+      let "TOTAL_TAMPS += $tamps"
+  else
+    echo "SNMP Failure!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+# Handle the PDU Checking  
+if [ "$service_type" == "nagios" ]; then
+
+  output_status+="PDU Amps (`echo "${TOTAL_TAMPS} * 0.10" |$BC_BIN`/`echo "${PDU_CRITICAL_TAMPS} * 0.10" |$BC_BIN`) "
+  
+  if [ "`echo "$TOTAL_TAMPS > $PDU_CRITICAL_TAMPS" |$BC_BIN`" -eq 1 ]; then
+    CRIT_COUNT=1
+    output_status+="- OVERLOAD!"
+  elif [ "`echo "$TOTAL_TAMPS > $PDU_WARNING_TAMPS" |$BC_BIN`" -eq 1 ]; then
+    WARN_COUNT=1
+    output_status+="- WARNING!"  
+  else
+    output_status+="- OK"
+  fi
+
+else
+
+  output_status+="Total Amps:`echo "${TOTAL_TAMPS} * 0.10" |$BC_BIN`:`echo "${PDU_CRITICAL_TAMPS} * 0.10" |$BC_BIN`:0"
+  echo -e "$output_status"
+  exit 0
+
+fi
+
+# Generate the proper exit status for nagios
+if [ "$CRIT_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_CRITICAL
+elif [ "$WARN_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_WARNING
+elif [ "$UNK_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_UNKOWN
+else
+   EXIT_STATUS=$STATE_OK
+fi
+
+# Print out status and exit
+echo -n "$output_status"
+exit $EXIT_STATUS
+

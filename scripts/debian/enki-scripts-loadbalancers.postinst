@@ -1,0 +1,9 @@
+#!/bin/sh
+
+/usr/sbin/update-alternatives --install /etc/enki/scripts/enki-configure-lvs \
+  enki-configure-lvs /etc/enki/scripts/enki-configure-lvs.lb-tun  100
+
+if [ -x "/etc/init.d/enki-firewall" ]; then
+        /etc/init.d/enki-firewall || exit 0
+fi
+

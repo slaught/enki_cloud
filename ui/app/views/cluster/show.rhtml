@@ -1,0 +1,20 @@
+<% set_html_title @cluster.to_label, "Clusters" %>
+<h1><%= @cluster.name %></h1>
+<div id="cluster_description">
+<em><%= @cluster.description %></em>
+<dl>
+<dt>VLAN</dt> <dd><%= @cluster.vlan%></dd>
+<dt>IP Network</dt><dd><%= @cluster.ip_range %></dd>
+<dt>Forward mark</dt><dd><%= @cluster.fw_mark %></dd>
+<dt>Load balanced?</dt><dd><%= @cluster.load_balanced %></dd>
+</dl>
+</div>
+<%= render :partial => 'service_list', 
+           :locals => {:services => @cluster.services, :cluster =>@cluster } %> 
+<%= render :partial => 'node_list', 
+           :locals => {:nodes => @cluster.nodes , :cluster =>@cluster } %>
+<br/>
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", :action => "edit", :id => @cluster.id %></li>
+  <li><%= link_to "Back", :action => "list" %></li>
+</ul>

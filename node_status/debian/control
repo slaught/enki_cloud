@@ -1,0 +1,13 @@
+Source: enki-nginx-perl-status
+Section: experimental
+Priority: extra
+Maintainer: Chad Slaughter <chad.slaughter@gmail.com>
+Build-Depends: debhelper (>= 5)
+Standards-Version: 3.7.2
+
+Package: enki-nginx-perl-status
+Priority: extra
+Section: devel
+Architecture: all
+Depends: nginx (>0.6.23), libperl6-slurp-perl, libperl6-export-perl, libcrypt-ssleay-perl, libwww-perl, libdigest-md5-perl, libhtml-parser-perl (>= 3.33), libhtml-tagset-perl, libcompress-zlib-perl, libhtml-format-perl, libmailtools-perl, libhtml-tree-perl (>= 3.11), libmime-base64-perl, perl (>= 5.8), libnet-perl, liburi-perl, netbase, libio-socket-ssl-perl, libyaml-perl, libnet-xmpp-perl, libnet-dns-perl, libnet-ldap-perl, libbit-vector-perl, libclass-accessor-perl
+Description: ENKI status perl module for Nginx

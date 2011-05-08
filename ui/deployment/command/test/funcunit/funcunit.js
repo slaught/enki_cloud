@@ -1,0 +1,1 @@
+steal.plugins('funcunit').then('tests/command_tests')

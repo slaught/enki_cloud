@@ -1,0 +1,11 @@
+/export/web/cnu_it/config/database_production.yml export/web/cnu_it/config/database.yml
+/export/web/cnu_it/bin/config_layout.sh usr/bin/gen_layout
+/export/web/cnu_it/config/ldap_production.yml export/web/cnu_it/config/ldap.yml
+/export/web/push_config_layout/config_layout.md5 export/web/cnu_it/public/config_layout.md5
+/export/web/cnu_it/config/cnu_it_db_production.cfg etc/nginx/sites-enabled/cnu_it_db.cfg
+/export/web/cnu_it/config/resque_production.yml export/web/cnu_it/config/resque.yml
+/export/web/cnu_it/config/redis_production.yml export/web/cnu_it/config/redis.yml
+/export/web/cnu_it/deployment/push-itcfg usr/bin/push-itcfg
+/export/web/cnu_it/config/three_par_production.yml export/web/cnu_it/config/three_par.yml
+/export/web/cnu_it/bin/3par_mgmt usr/bin/3par_mgmt
+/export/web/cnu_it/config/switch_snmp_production.yml export/web/cnu_it/config/switch_snmp.yml

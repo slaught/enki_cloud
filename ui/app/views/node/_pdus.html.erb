@@ -1,0 +1,87 @@
+<div id="node_pdus" class="node_data">
+<% if node.node_type.can_has_pdu? %>
+
+  <h2>PDUs</h2>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <% if node.model.nil? or node.model.power_supplies.nil? %>
+  <p style="color: #f00">Warning: This machine has no power supplies defined.</p>
+  <% end %>
+  <% if !node.model.nil? and !node.model.power_supplies.nil? and node.model.power_supplies < node.pdus.length %>
+  <p style="color: #f00">Warning: This machine is plugged into more PDUs than it has power supplies!</p>
+  <% end %>
+  <table class="pdu">
+  <!-- Enter Outlet number -->
+  <tr>
+    <th>PDU</th>
+    <th>Outlet</th>
+  </tr>
+  <% for p in node.pdus %>
+  <tr><td><%= link_to_node p.pdu %></td><td><%= p.outlet_no %></td>
+    <% permitted_to? :unplug_pdu, :node do %>
+    <td class="td_extra">
+    <% form_remote_tag(:html => {:id=>"remove_pdu_#{p.id}",
+           :action => { :action => "unplug_pdu", :id => node.id}},
+           :url => url_for({ :action => "unplug_pdu", :id => node.id}), 
+           :update => 'node_pdus') do  %>
+      <%= hidden_field_tag( "pdus_id", p.id ) %>
+      <%= image_submit_tag "silk/delete.png", :title => "Unplug" %>
+    <% end %>
+    </td>
+    <% end %>
+  </tr>
+  <% end %>
+
+  </table>
+  <% # if we cant determine the max number of PDU plugs or if all possible plugs are used, dont let someone over-plug %>
+  <% if node.node_type.can_has_pdu? and node.model and node.pdus.length < node.model.power_supplies.to_i %>
+  <% permitted_to? :plug_pdu , :node do %>
+  <div>
+    <% form_remote_tag(:html => {:id=>"add_pdu_node",
+           :action => { :action => "plug_pdu", :id => node.id}},
+           :url => url_for({ :action => "plug_pdu", :id => node.id}), 
+           :update => 'node_pdus') do   %>
+  <table>
+  <!-- <tr><td>Switch</td><td>Port</td></tr>  -->
+  <tr><td>
+   <%= collection_select(:pdu, :pdu_id, Node.find_all_pdus(node.datacenter), :node_id, :to_label) %>
+  </td>
+  <td><%= text_field_tag "pdu[outlet_no]" %></td> 
+  <td><%= submit_tag "Plug" %></td>
+    </tr>
+  </table>
+
+    <% end %>
+    </div>
+  <%end %>
+  <% end %>
+
+<% elsif node.node_type.is_pdu? %>
+
+  <h2>Plug Mappings</h2>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <table class="pdu">
+    <tr>
+      <th>Hostname</th>
+      <th>Outlet</th>
+    </tr>
+  <% for p in Pdu.find_all_by_pdu_id(node.id) %>
+    <tr>
+      <td><%= link_to_node(p.node) %></td>
+      <td><%= p.outlet_no %></td>
+      <% permitted_to? :unplug_pdu, :node do %>
+      <td class="td_extra">
+      <% form_remote_tag(:html => {:id=>"remove_pdu_#{p.id}",
+           :action => { :controller => "node", :action => "unplug_pdu", :id => p.node.id, :is_pdu? => true}},
+           :url => url_for({ :controller => "node", :action => "unplug_pdu", :id => p.node.id, :is_pdu? => true}),
+           :update => 'node_pdus') do  %>
+      <%= hidden_field_tag( "pdus_id", p.id ) %>
+      <%= image_submit_tag "/images/silk/delete.png", :title => 'Unplug' %>
+      <% end %>
+      </td>
+      <% end %>
+    </tr>
+  <% end %>
+  </table>
+
+<% end %>
+</div>

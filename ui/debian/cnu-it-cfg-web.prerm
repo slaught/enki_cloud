@@ -1,0 +1,9 @@
+#!/bin/sh
+
+if [ -x "/etc/init.d/cnu-it" ]; then
+	if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+		invoke-rc.d cnu-it stop || exit $?
+	else
+		/etc/init.d/cnu-it stop || exit $?
+	fi
+fi

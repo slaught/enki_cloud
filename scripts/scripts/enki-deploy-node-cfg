@@ -1,0 +1,538 @@
+#!/bin/bash
+
+# Deploy configuration DB cluster settings to nodes
+
+# Michael Vallaly (Sept '12) Ver 2.5
+
+CFG_BASE_DIR="/etc/enki/configs/base_config"
+ENKI_BASE_DIR="/etc/enki/configs"
+
+CDN_DIR="/data/static_content"
+CDN_FILEPACKS="40-cdn-cfg"
+
+DOWNPAGE_DIR="/data/downpage"
+LB_STATUS_DIR="/data/lbstatus"
+
+WEBSERVER_BIN="/etc/init.d/nginx"
+FIREWALL_BIN="/etc/init.d/enki-firewall"
+
+WEBSERVER_CONFIG_DIR="/etc/nginx/sites-enabled"
+FW_FILEPACK="25-firewall"
+LB_FILEPACKS="40-downpages 30-lvs"
+NODE_FILEPACKS="20-enki"
+
+NODE_CFG_FILES="net.services service.checks interfaces udev.rules lb.services"
+DNS_CFG_FILES="db.private-enki"
+
+CLUSTER_INFO_FILE="/etc/enki/cluster-info"
+
+FIND_BIN="/usr/bin/find"
+INSTALL_BIN="/usr/bin/install"
+
+WARSYNC_BIN="/usr/sbin/warsync"
+CLUSTER_MASTER_BIN="/etc/enki/cron-scripts/cluster_master_only"
+
+CRM_VERIFY_BIN="/usr/sbin/crm_verify"
+CIBADMIN_BIN="/usr/sbin/cibadmin"
+CRM_ATTRIBUTE_BIN="/usr/sbin/crm_attribute"
+
+# CIB Files (Order matters: CONSTRAINTS must be first!)
+CIB_XML_FILES="pacemaker_constraints_cfg.xml pacemaker_resources_cfg.xml"
+#FIXME
+CIB_XML_FILES="pacemaker_resources_cfg.xml"
+
+###############################################################
+
+
+#FIXME Validate configuration version using checksums
+
+
+# GLOBALS
+STAGE_ONLY=0
+NO_SYNC=0
+FORCE_CIB=0
+PUSH_TO_CLUSTER=0
+
+# FUCTIONS
+
+warsync_cluster () {
+
+  local filepacks=$1
+  local warsync_status=1
+
+  if [ "$NO_SYNC" != "1" ]; then
+
+    # Ensure we are the cluster master or syncing is moot
+    if ! $CLUSTER_MASTER_BIN; then
+      echo "Not a cluster master! Cannot sync to remaining cluster members. Exiting!"
+      exit 0
+    fi
+
+    if [ "${STAGE_ONLY}" == "1" ]; then
+      warsync_opt="-q --skip-cmds $filepacks"
+    else
+      warsync_opt="-q $filepacks"
+    fi
+
+    ${WARSYNC_BIN} ${warsync_opt} 1> /dev/null
+    warsync_status=$?
+
+    if [ $warsync_status -eq 0 ]; then
+      echo "Done."
+      return 0
+    else
+      return $warsync_status
+    fi
+
+  fi
+
+}
+
+# Check for local dependencies 
+for bindep in $FIND_BIN $INSTALL_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Print our usage line
+usage="Usage: $0 -h <host> or -c and -l -s -f\n\n
+\t-h  Update ENKI configurations for <host>\n\n
+\t-c  Deploy to cluster (push changes to all nodes in cluster)\n
+\t-l  Local update only (do not sync local changes to cluster nodes)\n
+\t-s  Stage node(s) (update all configs but do not reload services)\n\n
+\t-f  Force LB CIB updates (potentially dangerous)\n"
+
+# Check our parameters
+while getopts "ch:lfs" options; do
+  case $options in
+    h ) NODES=" $OPTARG";;
+    c ) PUSH_TO_CLUSTER=1;;
+    l ) NO_SYNC=1;;
+    f ) FORCE_CIB=1;;
+    s ) STAGE_ONLY=1;;
+    \? ) echo -e $usage
+         exit 1;;
+     * ) echo -e $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 1 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to update system configuration!"
+  exec sudo $0 $@
+fi
+
+# Grab the local node name
+LOCAL_NODE=`hostname |cut -d. -f1,2`
+
+# Handle cluster deployments
+if [ "$PUSH_TO_CLUSTER" == "1" ]; then
+  # Pull in the cluster-info file
+  if [ ! -r ${CLUSTER_INFO_FILE} ]; then
+    echo "Cannot open ${CLUSTER_INFO_FILE}.. Exiting!"
+    exit 1
+  else
+    . $CLUSTER_INFO_FILE
+  fi
+
+  # Set valid nodes
+  NODES="$(echo $SLAVES $MASTER |tr -t ' ' '\n' |cut -d. -f 1,2)"
+else
+  MASTER=$LOCAL_NODE
+  NODES=$LOCAL_NODE
+fi
+
+# Ensure the local machine is handled last
+if [ "`echo $NODES |grep -cwe "$LOCAL_NODE"`" -eq "1" ]; then 
+   VALID_NODES="$(echo $NODES |sed -e "s/${LOCAL_NODE}//") ${LOCAL_NODE}"
+else
+   VALID_NODES=$NODES
+fi
+
+# Sanity check our hostname
+if [ "${NODES}x" == "x" ] && [ "${PUSH_TO_CLUSTER}" == "0" ]; then
+  echo -e $usage
+  exit 1
+fi
+
+## START NODE SECTION
+
+for node_name in $VALID_NODES; do
+
+  echo "Updating local node configuration files for ${node_name}.. "
+
+  # Handle local node configuration
+  for local_file in $NODE_CFG_FILES; do
+
+    # Install local node configuration files
+    if [ -e ${CFG_BASE_DIR}/node/${node_name}/${local_file} ]; then
+      echo -n "  Installing local ${local_file} for node ${node_name}.. "
+      ${INSTALL_BIN} -o root -g root -m 644 -D ${CFG_BASE_DIR}/node/${node_name}/${local_file} ${ENKI_BASE_DIR}/node/${node_name}/${local_file}
+
+      if [ -e ${ENKI_BASE_DIR}/node/${node_name}/${local_file} -a "${node_name}" == "${LOCAL_NODE}" ]; then
+        ln -sf ${ENKI_BASE_DIR}/node/${node_name}/${local_file} ${ENKI_BASE_DIR}/node/${local_file}
+      fi
+      echo "Done."
+    fi
+   
+  done
+
+  # Handle local XEN DomU configuration
+  if [ -e ${CFG_BASE_DIR}/xen/${node_name}.domU.cfg ]; then
+    echo -n "Installing XEN domU configuration for ${node_name}.. "
+    ${INSTALL_BIN} -o root -g root -m 644 -D ${CFG_BASE_DIR}/xen/${node_name}.domU.cfg ${ENKI_BASE_DIR}/xen/${node_name}.domU.cfg
+    echo "Done."
+  fi
+
+done
+
+echo -n "Updating local DNS files.. "
+
+# Handle local dns configuration
+for dns_file in $DNS_CFG_FILES; do
+
+  # Install configuration file 
+  if [ -e ${CFG_BASE_DIR}/dns/${dns_file} ]; then
+    echo -ne "\n  Installing $dns_file dns file.. "
+    ${INSTALL_BIN} -o root -g root -m 644 -D ${CFG_BASE_DIR}/dns/${dns_file} ${ENKI_BASE_DIR}/dns/${dns_file}
+  fi
+
+done
+echo "Done."
+
+# CDN Static Content
+if [ -d  ${CDN_DIR} ]; then
+
+  echo "Updating CDN Configuration.. "
+
+  if [ ! -d $WEBSERVER_CONFIG_DIR ]; then
+    echo "Webserver directory (${WEBSERVER_CONFIG_DIR}) does not exist! NO CDN SUPPORT ENABLED!"
+
+  else
+    # Remove any existing downpages from the running config
+    rm -f ${WEBSERVER_CONFIG_DIR}/nginx-cdn-*
+
+    for cdncfg in $(${FIND_BIN} ${CFG_BASE_DIR}/cdn -type f -name 'nginx-cdn-*' 2>/dev/null); do
+
+      certs=`grep -ie "ssl_certificate " ${cdncfg} |uniq |cut -d';' -f1 |awk '{print $2}'`
+      docroots=`grep -ie "root " ${cdncfg} |uniq |cut -d';' -f1 |awk '{print $2}'`
+
+      # Handle docroots
+      for docroot in $docroots; do
+        if [ ! -d "$docroot" ]; then
+          ${INSTALL_BIN} -d -o root -g www-data -m 755 $docroot
+          ${INSTALL_BIN} -d -o root -g root -m 755 $docroot/../ssl
+        fi
+      done
+
+      # Handle certs
+      for cert in $certs; do
+        if [ ! -e $cert ] || [ ! -r $cert ]; then
+          echo "  Warning: SSL Certificate ($cert) does not exist! Skipping CDN configuration.."
+          continue 2
+        fi
+      done
+
+      # Do the CDN configuration install 
+      cdndir=`basename $(dirname ${cdncfg})`
+      cdnfile=`basename ${cdncfg}`
+
+      ${INSTALL_BIN} -o root -g root -m 644 -D ${cdncfg} ${CDN_DIR}/${cdndir}/${cdnfile}
+      ln -sf ${CDN_DIR}/${cdndir}/${cdnfile} ${WEBSERVER_CONFIG_DIR}/${cdnfile}
+
+   done
+
+    if [ "$STAGE_ONLY" != "1" ]; then
+      # Reload the webserver
+      echo -n "Reloading local CDN webserver configuration.. "
+      ${WEBSERVER_BIN} reload &>/dev/null
+      if [ $? -eq 0 ]; then
+        echo "Done."
+	echo -n "Pushing CDN configuration changes to cluster (this may take some time)... "
+        warsync_cluster "$CDN_FILEPACKS"
+      else
+        echo "CDN support is broken please manually fix!"
+        exit 1
+      fi
+    fi
+  fi
+fi
+
+## END OF NODE SECTION
+
+## START OF LB SECTION
+
+# Handle Loadbalancers nodes
+if [ -e ${ENKI_BASE_DIR}/node/${LOCAL_NODE}/lb.services ] && [ "${MASTER}" == "${LOCAL_NODE}" ]; then
+
+  # Check for LB dependencies
+  for bindep in $CRM_VERIFY_BIN $CIBADMIN_BIN; do
+    if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+      echo "Cannot execute (${bindep}).. Bailing!"
+      exit 1
+    fi
+  done
+
+  # Loadbalancer Status Pages
+  if [ -d ${LB_STATUS_DIR} ]; then
+
+    echo -n "Updating LB Status Pages.. "
+
+    for lbstatus_file in $(${FIND_BIN} ${CFG_BASE_DIR}/haview.docroot -type f 2>/dev/null); do
+
+       ${INSTALL_BIN} -o root -g root -m 644 -D ${lbstatus_file} ${LB_STATUS_DIR}/docroot/`echo $lbstatus_file |sed s@${CFG_BASE_DIR}/haview.docroot/@@g`
+
+    done
+    echo "Done"
+  fi
+
+  # Loadbalancer Downpages
+  if [ -d  ${DOWNPAGE_DIR} ]; then
+
+    echo "Updating Downpage Configuration.. "
+
+    if [ ! -d $WEBSERVER_CONFIG_DIR ]; then
+      echo "Webserver directory (${WEBSERVER_CONFIG_DIR}) does not exist! NO DOWNPAGE SUPPORT ENABLED!"
+
+    else 
+      # Remove any existing downpages from the running config
+      rm -f ${WEBSERVER_CONFIG_DIR}/nginx-*downpage 
+
+      for downpagecfg in $(${FIND_BIN} ${CFG_BASE_DIR}/downpage -type f -name 'nginx-*downpage' 2>/dev/null); do
+
+        certs=`grep -ie "ssl_certificate " ${downpagecfg} |uniq |cut -d';' -f1 |awk '{print $2}'`
+        docroots=`grep -ie "root " ${downpagecfg} |uniq |cut -d';' -f1 |awk '{print $2}'`
+
+        # Handle docroots
+        for docroot in $docroots; do
+          if [ ! -d "$docroot" ]; then
+            ${INSTALL_BIN} -d -o root -g www-data -m 755 $docroot
+            ${INSTALL_BIN} -d -o root -g root -m 755 $docroot/../ssl
+            # If the downpage directory doesn't already contain content display something..
+            if [ "`ls -1 ${docroot} |wc -l`" -eq 0 ]; then
+              ln -s ${DOWNPAGE_DIR}/default_downpage/index.html ${docroot}/down.html
+	    fi
+          fi
+        done
+
+        # Handle certs
+        for cert in $certs; do
+          if [ ! -e $cert ] || [ ! -r $cert ]; then
+            echo "  Warning: SSL Certificate ($cert) does not exist! Skipping downpage configuration.."
+            continue 2
+          fi
+        done
+
+        # Do the downpage install 
+        downpagedir=`basename $(dirname ${downpagecfg})`
+        downpagefile=`basename ${downpagecfg}`
+
+        ${INSTALL_BIN} -o root -g root -m 644 -D ${downpagecfg} ${DOWNPAGE_DIR}/${downpagedir}/${downpagefile}
+        ln -sf ${DOWNPAGE_DIR}/${downpagedir}/${downpagefile} ${WEBSERVER_CONFIG_DIR}/${downpagefile}
+
+      done
+
+      if [ "$STAGE_ONLY" != "1" ]; then
+        # Reload the webserver
+        echo -n "Reloading Downpage webserver configuration.. "
+        ${WEBSERVER_BIN} reload &>/dev/null
+        if [ $? -eq 0 ]; then
+          echo "Done."
+        else
+          echo "Downpage support is broken please manually fix!"
+          exit 1
+        fi
+      fi
+    fi
+  fi
+
+  # Heartbeat Configs
+  if [ -d ${CFG_BASE_DIR}/ha.d ]; then
+    echo -n "Updating Heartbeat Configuration.. "
+    for file in $(${FIND_BIN} ${CFG_BASE_DIR}/ha.d -type f); do
+      ${INSTALL_BIN} -o root -g root -m 644 ${file} ${ENKI_BASE_DIR}/ha.d/
+    done
+    echo "Done."
+  fi
+
+  # Ldirectord Configs
+  #FIXME copy over only ldirectord cfgs that exist in the CIB resource? ( cat /etc/enki/configs/base_config/ha.d/heartbeat_resources_cfg.xml |grep 'name="configfile" ' |cut -d'"' -f6 )
+  #FIXME these really should be versioned by directory and we should be using hardlinks for safety, maybe if ldirectord gets rewritten this will all go away
+
+  if [ -d ${CFG_BASE_DIR}/lvs ] && [ "$STAGE_ONLY" != "1" ]; then
+    echo -n "Updating Ldirectord Configuration.. "
+    for file in $(${FIND_BIN} ${CFG_BASE_DIR}/lvs -type f -name '*.cfg'); do
+      ${INSTALL_BIN} -o root -g root -m 644 ${file} ${ENKI_BASE_DIR}/lvs/
+    done
+    echo "Done."
+  fi
+
+  # Sync changes to cluster 
+
+#  if [ "$NO_SYNC" != "1" ]; then
+#
+#    # Ensure we are the cluster master or syncing is moot
+#    if ! $CLUSTER_MASTER_BIN; then
+#      echo "Not a cluster master! Cannot sync to remaining cluster members. Exiting!"
+#      exit 0
+#    fi
+#
+#    echo -n "Pushing LB configuration changes to cluster (this may take some time)... "
+#
+#    # FIXME need to handle non-LB filepacks
+#
+#    if [ "${STAGE_ONLY}" == "1" ]; then
+#      warsync_opt="-q --skip-cmds $LB_FILEPACKS"
+#    else
+#      warsync_opt="-q $LB_FILEPACKS"
+#    fi
+#
+#    ${WARSYNC_BIN} ${warsync_opt} 1> /dev/null
+#    LB_WARSYNC_STATUS=$?
+#
+#    if [ $LB_WARSYNC_STATUS -eq 0 ]; then
+#      echo "Done."
+#    fi
+#
+#  fi 
+
+  echo -n "Pushing LB configuration changes to cluster (this may take some time)... "
+  warsync_cluster "$LB_FILEPACKS"
+  LB_WARSYNC_STATUS=$?
+
+fi
+# END OF LB SPECIFIC
+
+
+## START NODE SECTION
+if [ "$NO_SYNC" != "1" ]; then 
+  echo -n "Pushing ENKI configuration changes to cluster (this may take some time)... "
+  warsync_cluster "$NODE_FILEPACKS"
+fi
+
+## END NODE SECTION
+
+## START FIREWALL SECTION 
+
+# Reload local firewall
+if [ "${MASTER}" == "${LOCAL_NODE}" ] && [ "${STAGE_ONLY}" != "1" ]; then
+  echo -n "Restarting local firewall to apply changes.. "
+  if ! ${FIREWALL_BIN} 1> /dev/null; then
+    echo "Failed! Bailing.."
+    exit 1
+  fi
+  echo "Done."
+fi
+
+# Reload firewall on each cluster memeber
+if [ "$NO_SYNC" != "1" ]; then
+
+  # Ensure we are the cluster master or syncing is moot
+  if ! $CLUSTER_MASTER_BIN; then
+    echo "This node is not a warsync master! Skipping cluster syncronization.."
+    break 2
+  fi
+
+  # Just stage the files or stage and restart firewall
+  if [ "${STAGE_ONLY}" == "1" ]; then
+    warsync_opt="-q --skip-cmds $FW_FILEPACK"
+    message="Pushing firewall configuration to remote machine"
+  else
+    warsync_opt="-q $FW_FILEPACK"
+    message="Restarting firewall on remote machine"
+  fi
+
+  # Loop over all our slaves and update each of them
+  for node in ${SLAVES}; do
+    echo -n "$message (${node}).. "
+    ${WARSYNC_BIN} ${warsync_opt} --client=${node} 1> /dev/null 
+    if [ $? -eq 0 ]; then
+      echo "Done."
+    else
+      echo "Failed! Bailing.."
+      exit 1
+    fi
+  done
+
+fi
+
+## STOP FIREWALL SECTION
+
+# Apply Heartbeat changes to cluster
+if [ -e ${ENKI_BASE_DIR}/node/${LOCAL_NODE}/lb.services ] && [ "${STAGE_ONLY}" != "1" ] && [ "${NO_SYNC}" != "1" ] && [ "$PUSH_TO_CLUSTER" -eq "1" ] && [ $LB_WARSYNC_STATUS == "0" ]; then
+
+  # Check that the CIB files exist!
+  echo -n "Checking that pacemaker CIB files are readable.. "
+  for cibfile in $CIB_XML_FILES; do
+    if [ ! -e ${ENKI_BASE_DIR}/ha.d/$cibfile ] || [ ! -r ${ENKI_BASE_DIR}/ha.d/$cibfile ]; then
+      echo "Cannot load CIB (${ENKI_BASE_DIR}/ha.d/${cibfile}).. Bailing!"
+      exit 1
+    fi
+  done
+  echo "Done."
+
+  for cibfile in $CIB_XML_FILES; do
+    # Sanity check against the live CIB  
+    echo -n "Sanity checking pacemaker CIB file ($cibfile).. "
+    cib_output=`$CRM_VERIFY_BIN -LVVVV -x ${ENKI_BASE_DIR}/ha.d/${cibfile} 2>&1`
+    cib_status=$?
+    cib_warns=`echo "$cib_output" |grep -i -e ' WARN: '`
+    cib_errors=`echo "$cib_output" |grep -i -e ' ERROR: '`
+    if [ "$(echo ${cib_warns}|tr -d [:space:])x" != "x" ]; then
+      echo -ne "\n- CIB file contains warnings"
+      if [ "$FORCE_CIB" == "0" ]; then
+        echo ":"
+        echo "${cib_warns}" |cut -d: -f5-
+      else
+        echo ", proceeding due to 'force' command.."
+      fi
+      CIB_WARN=1
+    fi
+
+    if [ "$(echo ${cib_errors}| tr -d [:space:])x" != "x" ]; then
+      echo "- CIB file contains errors:"
+      echo "${cib_errors}" |cut -d: -f5-
+      echo "Exiting!"
+      exit 1
+    fi
+
+  done    
+  
+  # Exit if we have cib warnings
+  if [ "$CIB_WARN" == "1" ] ; then
+    if [ "$FORCE_CIB" == "0" ]; then
+      echo "Exiting!"
+      exit 1
+    fi
+  fi
+
+  # Unmanage the cluster resources while we apply the new configs and ensure we are managed if we terminate.
+  trap "{ $CRM_ATTRIBUTE_BIN -t crm_config -n is-managed-default -v true; }" EXIT 
+  $CRM_ATTRIBUTE_BIN -t crm_config -n is-managed-default -v false
+    
+  # Apply the CIB changes (order matters)
+  for cibfile in $CIB_XML_FILES; do
+    # Generate our resource type
+    resource_type=`echo $cibfile |cut -s -d_ -f2`
+    echo -n "Applying CIB ${resource_type}.. "
+    cib_output=`${CIBADMIN_BIN} -R -o ${resource_type} -x ${ENKI_BASE_DIR}/ha.d/${cibfile} 2>&1`
+    if [ $? -eq 0 ]; then
+      echo "Success!"
+    else
+      echo -e "Errors occured applying CIB ${resource_type}: \n ${cib_output}"
+      exit 1
+    fi
+  done
+
+fi
+
+echo "Configuration update completed successfully."
+

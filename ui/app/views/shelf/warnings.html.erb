@@ -1,0 +1,121 @@
+<% set_html_title "Warnings" %>
+<h1>Warnings</h1>
+
+<% unless @empty_pdus.empty? %>
+<h3>Empty PDUs</h3>
+<div> No nodes plugged into these PDUs
+<ul>
+<% for i in @empty_pdus %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+
+<% unless @empty_switches.empty? %>
+<h3>Empty Switches</h3>
+<div> No nodes plugged into these Switches 
+<ul>
+<% for i in @empty_switches %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+
+<% unless @empty_serial.empty? %>
+<h3>Empty Serial Consoles</h3>
+<div> No nodes plugged into these Serial Consoles
+<ul>
+<% for i in @empty_serial %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @broken_lb.empty? %>
+<h3>Stonith Broken </h3>
+<div> Load Balancers with no PDU plug 
+<ul>
+<% for i in @broken_lb %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @missing_model.empty? %>
+<h3>No Equipment Model</h3>
+<div> Nodes with no equipment model defined.
+<ul>
+<% for i in @missing_model %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @missing_scs.empty? %>
+<h3>Not attached to  Serial Console </h3>
+<div> Nodes with no serial console defined
+<ul>
+<% for i in @missing_scs  %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @missing_switch.empty? %>
+<h3>Not attached to  Network Switch</h3>
+<div> Nodes with no network switch ports defined
+<ul>
+<% for i in @missing_switch %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @missing_pdu.empty? %>
+<h3>Not attached to a PDU</h3>
+<div> Nodes not plugged into any pdu
+<ul>
+<% for i in @missing_pdu.uniq %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @missing_os.empty? %>
+<h3>No OS</h3>
+<div> Nodes with no os_version set
+<ul>
+<% for i in @missing_os    %>
+<li><%= link_to_node(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @without_lbs.empty? %>
+<h3>No Load Balancers</h3>
+<div> Clusters with no assigned load balancers
+<ul>
+<% for i in @without_lbs    %>
+<li><%= link_to_cluster(i) %> </li>
+<% end %>
+</ul>
+</div>
+<% end %>
+<% unless @bad_equipment.empty? %>
+<h3>Poorly specificed Equipment</h3>
+<div> Equipment with no cpu_cores or no ram or no serial console set
+<ul>
+<% for i in @bad_equipment %>
+<li><%= link_to_machine(i) %>
+<%= "no serial config" if i.serial_console.nil? %> 
+<%= "no cpu" if i.cpu_cores.nil? or i.cpu_cores.to_i < 1 %> 
+<%= "no ram" if i.ram.nil? or i.ram.to_i < 128 %> 
+<%= "no power supplies" if i.power_supplies.nil? or i.power_supplies < 1 %> 
+</li>
+<% end %>
+</ul>
+</div>
+<% end %>
+

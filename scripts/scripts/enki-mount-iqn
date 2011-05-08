@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# This script properly mounts a SAN volume.
+
+# Michael Vallaly Ver 1.3 (April '2010)
+
+ISCSIADM_BIN="/usr/bin/iscsiadm"
+FSCK_BIN="/sbin/fsck.ext3"
+TUNE2FS_BIN="/sbin/tune2fs"
+UDEVADM_BIN="/sbin/udevadm"
+
+MOUNT_BIN="/bin/mount"
+MOUNT_OPTS="data=journal,noatime"
+
+#######################################################################
+
+LIST_ONLY=0
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to mount volumes!" 
+  exit 1
+fi
+
+usage="Usage: $0 -l[ist targets] or -T <iqn.iscsi_iqn> -p [portal]"
+
+while getopts "lT:p:" options; do
+  case $options in
+    l ) LIST_ONLY=1;;
+    T ) IQN=$OPTARG;;
+    p ) PORTAL=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Generate portal information
+if [[ -z $PORTAL ]]; then
+  local_gw=`ip ro sh |grep -e "nexthop via " |awk '{print $3}' |sort -u`
+  PORTAL="`echo "$local_gw" |cut -d. -f1,2,3`.10"
+fi
+
+# Just list the available IQNs
+if [ $LIST_ONLY -eq 1 ]; then
+  echo "Available SAN Targets: "
+  $ISCSIADM_BIN -m discovery -tst -p ${PORTAL} |awk '{print $2}' |sort -u
+  exit 0
+fi
+
+# Sanity check input
+if [ $# -lt 2 ]; then
+  echo $usage
+  exit 1
+fi
+
+# Check if IQN is logged in
+if [ "`$ISCSIADM_BIN -m session |grep -cE " \$\{IQN\}$"`" -eq 0 ]; then
+
+  # Do iscsiadm discovery
+  $ISCSIADM_BIN -m discovery -tst -p ${PORTAL} &> /dev/null
+  if [ $? -ne 0 ]; then
+    echo "iSCSI discovery failed! Aborting..."
+    exit 1
+  fi
+
+  # Login to IQN
+  echo -e "Logging into IQN...  "
+  $ISCSIADM_BIN -m node -T ${IQN} -l &> /dev/null
+  if [ $? -ne 0 ]; then 
+    echo "iSCSI login failed! Aborting..."
+    exit 1
+  else
+    echo "Done."
+  fi
+
+fi
+
+# Wait for the new devices to settle 
+$UDEVADM_BIN settle --timeout=10
+
+# Check that the IQN device exists
+if [ ! -e /dev/iscsi-targets/${IQN} ]; then
+  echo "Cannot find device for (${IQN}) SAN volume.. Exiting!"
+  exit 1
+fi
+
+# Check if SAN mountpoint exists
+if [ ! -d /san/${IQN} ]; then
+  mkdir -p /san/${IQN}
+fi
+
+# Check filesystem state
+FS_STATE=`$TUNE2FS_BIN -l /dev/iscsi-targets/${IQN} |grep -e "Filesystem state:" |cut -d: -f2 |tr -d '[:space:]'`
+
+if [ "$FS_STATE" != "clean" ]; then
+  echo "The filesystem on (${IQN}) is not clean, it is _HIGHLY_ recommended if you value the data, FSCK is performed before continuing..."
+
+  read -p "Should an FSCK of the filesystem be performed now? [Yes / please corrupt my data]: " userinput
+
+  if [ $userinput != "please corrupt my data" ]; then
+
+    echo "Running Filesystem check on (${IQN}).."
+    # Do a filesystem check
+    $FSCK_BIN -C0 -p /dev/iscsi-targets/${IQN}
+    fsck_status=$?
+
+    if [ $fsck_status -gt 1 ] ; then
+      echo "FSCK errored with exit status ($fsck_status).. Manual intervetion is required!"
+      exit 1
+    fi
+
+  fi
+  
+fi
+
+# Check if mounted.
+if [ "`$MOUNT_BIN |grep -ce "/san/${IQN}"`" -eq 0 ]; then
+  # Mount
+  if ! $MOUNT_BIN /dev/iscsi-targets/${IQN} /san/${IQN} -o ${MOUNT_OPTS}; then
+    echo "SAN volume unmountable... Exiting!"
+    exit 1
+  fi 
+fi
+

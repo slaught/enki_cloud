@@ -1,0 +1,67 @@
+  <div id="<%= domo.to_label %>">
+    <h3><%= domo.to_label %><%= render :partial => 'show_add_mapping_form_button', :locals => { :host => domo } if permitted_to? :create, :xen %></h3>
+    <table id="<%= domo.to_label%>_xen_mappings" class="xen_compare">
+        <tr>
+          <td id="<%= domo.to_label%>_add_mapping_form" colspan="2" class="hidden">
+          </td>
+        </tr>
+        <tr>
+          <th>CPU %</th>
+          <th>MEM %</th>
+        </tr>
+        <% pr = Rcache.lookup_or("#{domo.to_label}-resource-used") { domo.percent_resources_used } %>
+        <%# res = domo.xen_capacity %>
+        <%# unless res.nil? %>
+        <%# pr = [ ((res[:mem_use].to_f / res[:mem_cap].to_f) * 100).to_i, ((res[:cpu_use].to_f / res[:cpu_cap].to_f) * 100).to_i ] %>
+        <tr>
+          <td class="percent-bar"><div style="width: <%= pr[1] > 100 ? 100 : pr[1] %>%;" class="<%=if pr[1] > 100
+          "overloaded"
+        elsif pr[1] > 70
+          "kindafull"
+        else
+          "ok"
+        end %> percent-bar"><%= pr[1] %></div></td>
+          <td class="percent-bar"><div style="width: <%= pr[0] > 100 ? 100 : pr[0] %>%;" class="<%=if pr[0] > 100
+          "overloaded"
+        elsif pr[0] > 70
+          "kindafull"
+        else
+          "ok"
+        end %> percent-bar"><%= pr[0] %></div></td>
+        </tr>
+        <tr>
+          <th>Config DB</th>
+          <th>Live Data</th>
+        </tr>
+      <% Rcache.clear("#{domo.to_label}-mapping-table") unless Rcache.lookup("#{domo.to_label}-mapping-table").nil? or guests.length == Rcache.lookup("#{domo.to_label}-mapping-table").length %>
+      <% [guests,Rcache.lookup_or("#{domo.to_label}-mapping-table") {domo.mapping_table(guests)}].transpose.each do |g,table| %>
+        <tr>
+          <% if table[0] %>
+            <td><%= link_to_node(g) %><%= render :partial => 'show_unmap_link', :locals => {:host => domo, :guest => g} if permitted_to? :delete, :xen and table[0]%></td>
+          <% else %>
+            <td class="xen_compare_error">
+
+                <%= link_to_remote "Add Mapping", :html => {
+                          :action => { :action => "map_to_host", :host_id => domo.id,
+                            :guest_fn_prefix => g.to_label}},
+                        :url => url_for({ :action => "map_to_host", :host_id => domo.id,
+                          :guest_fn_prefix => g.to_label}) if permitted_to? :manage, :xen %>
+            </td>
+          <% end %>
+          <% if table[1] %>
+            <td><%= g.to_label %></td>
+          <% else %>
+            <td class="xen_compare_warning"></td>
+          <% end %>
+        </tr>
+      <% end %>
+      <% domo.live_xen_guests.select{|m| m.client_id.nil?}.map{|c| c.client_name }.each do |no_node| %>
+        <tr>
+          <td class="xen_compare_error">
+            <%= link_to "Create Node", {:controller => "node", :action => "new", :fn_prefix => no_node, :node_type => "virtual"} if permitted_to? :create, :node %>
+          </td>
+          <td><%= no_node %></td>
+      <% end %>
+    </table>
+  </div>
+  <br/>

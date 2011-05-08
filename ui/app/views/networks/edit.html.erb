@@ -1,0 +1,9 @@
+<h1>Editing network</h1>
+
+<% form_for(@network) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f, :network_types => @network_types } %>
+<p><%= f.submit 'Update' %></p>
+<% end %>
+
+<%= link_to 'Show', @network %> |
+<%= link_to 'List', networks_path %>

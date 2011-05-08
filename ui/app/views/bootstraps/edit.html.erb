@@ -1,0 +1,13 @@
+<h1>Editing bootstrap</h1>
+
+<% form_for(@bootstrap) do |f| %>
+  <%= f.error_messages %>
+  <%= render :partial => 'item', :locals => {:bootstrap => @bootstrap } %>
+
+  <p> Ready for Stage One to Reboot?  <%= f.check_box :stage_one %> </p>
+  <p> Ready for Stage Two to Reboot?  <%= f.check_box :stage_two %> </p>
+  <p> <%= f.submit "Mark as Reboot ready" %></p>
+<% end %>
+
+<%= link_to 'Show', @bootstrap %> |
+<%= link_to 'Back', bootstraps_path %>

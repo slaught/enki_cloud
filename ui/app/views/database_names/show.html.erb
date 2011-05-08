@@ -1,0 +1,29 @@
+<% set_html_title @database_name.name, "Database Names" %>
+<%= layout_show_element('Name', @database_name.name ) %> 
+<%= layout_show_element('Description', @database_name.description ) %> 
+
+
+<div id="database_clusters">
+<h2>Clusters</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table>
+<tr><td>Name</td>
+<td> Service </td>
+<td>Config</td>
+</tr>
+<% for c in @database_name.database_clusters %>
+<tr>
+<td><%= h c.name %></td>
+<td><%= h c.service.name %></td>
+<td><%= h c.database_config.name %></td>
+</tr>
+<% end %>
+</table>
+</div>
+
+
+
+
+<%= link_to 'Edit', edit_database_name_path(@database_name) %> |
+<%= link_to 'Destroy', @database_name, :confirm => 'Are you sure?', :method => :delete %> |
+<%= link_to 'List', :action => :index  %>

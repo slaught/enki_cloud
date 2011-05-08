@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Show Jail Accounts for Sftp/SCP
+
+########################################################################################
+
+usage="Usage: $0 " 
+
+IFS=$'\n'
+
+for account in `grep -e "/usr/sbin/scponlyc$" /etc/passwd`; do
+  username=`echo "$account" |cut -d: -f1`
+  description=`echo "$account" |cut -d: -f5 |cut -d, -f1`
+  path=`echo "$account" |cut -d: -f6`
+  
+  output="$username,$description,$path\n$output"
+
+done
+
+display=`echo -e "$output" |sort -t,` 
+
+echo -e "Username,Description,Storage Path\n" "$display" |column -s, -t

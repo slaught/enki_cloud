@@ -1,0 +1,457 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          enki-firewall
+# Required-Start:
+# Required-Stop:
+# Default-Start:     S
+# Default-Stop:
+# Short-Description: ENKI Firewall Script
+# Description:       Enable ENKI firewall on bootup.
+### END INIT INFO
+
+###########################
+# ENKI Firewall Script 3.0 #
+###########################
+
+# Michael Vallaly (July 21th '2010) + Space Fix
+
+NET_SERVICES_CONFIG="/etc/enki/configs/node/net.services"
+LVS_CONFIG_BIN="/etc/enki/scripts/enki-configure-lvs"
+NETWORK_CONFIG_BIN="/etc/enki/scripts/enki-configure-network"
+BOGON_FILTER_BIN="/etc/enki/scripts/enki-bogon-filter"
+ROUTE_CONFIG_BIN="/etc/enki/scripts/enki-configure-router"
+
+AWK_BIN="/usr/bin/awk"
+GREP_BIN="/bin/grep"
+IP_BIN="/bin/ip"
+IPTABLES_BIN="/sbin/iptables"
+IPTABLES_RESTORE_BIN="${IPTABLES_BIN}-restore"
+PGREP_BIN="/usr/bin/pgrep"
+SORT_BIN="/usr/bin/sort"
+
+SPINNER_MOD="10"
+
+MGMT_VLAN="4000"
+MGMT_NETWORK="172.23.0.0/16"
+
+#############################################################################################
+
+bash_check () {
+
+  major_ver=`echo $BASH_VERSION |cut -d'.' -f1,2`
+
+  if [ "`echo "$major_ver < 3.2" |/usr/bin/bc`" -eq "1" ]; then
+    echo "This version of BASH ${BASH_VERSION} is too old and is unsupported. You should upgrade.."
+    exit 1
+  fi
+
+}
+
+# Reset Netfilter
+reset_netfilter () {
+
+  # Turn off IP Forwarding
+  echo "0" > /proc/sys/net/ipv4/ip_forward
+
+  # Disabling IP Spoofing attacks.
+  echo "2" > /proc/sys/net/ipv4/conf/all/rp_filter
+
+  # Don't respond to broadcast pings
+  echo "1" > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+
+  # Block source routing
+  echo "0" > /proc/sys/net/ipv4/conf/all/accept_source_route
+
+  # Enable TCP timestamps.
+  echo "1" > /proc/sys/net/ipv4/tcp_timestamps
+
+  # Flush Incomming Packet rules
+  $IPTABLES_BIN -F INPUT
+
+  # Flush Outgoing Packets rules
+  $IPTABLES_BIN -F OUTPUT
+
+  # Flush Forwarding rules
+  $IPTABLES_BIN -F FORWARD
+
+  # By Default DROP all INPUT  
+  $IPTABLES_BIN -P INPUT DROP
+
+  # By Default DROP all FORWARD packets
+  $IPTABLES_BIN -P FORWARD DROP
+
+  # Allow traffic on the loopback device
+  $IPTABLES_BIN -A INPUT -i lo -j ACCEPT
+
+  # Enable XEN domain0 bridging
+  if [ -r "/proc/xen/capabilities" ]; then
+    echo -ne "\nDetected Xen "
+
+    # Dom0 Support add all bridges to forward table
+    if [ "$($GREP_BIN -c 'control_d' /proc/xen/capabilities)" -ge "1" ]; then
+      echo -ne "Domain0\n - Enabling XEN Bridge Support... "
+
+      # Quell overlapping runs (XEN) 
+      if [ "$($PGREP_BIN -cf "${0}")" -gt "1" ]; then
+        sleep $(echo $$ |cut -c ${#$})
+      fi
+
+      # Ignore packets arriving on xen bridged interfaces from connection tracking
+      $IPTABLES_BIN -t raw -F
+      $IPTABLES_BIN -t raw -A PREROUTING -i xenbr+ -m physdev --physdev-is-in -j NOTRACK
+
+      # Enable Xen Bridges
+      for bridge in $(ls -1 /sys/class/net/ |$GREP_BIN -e '^xenbr[[:alnum:]].*' |$SORT_BIN -u); do
+        $IPTABLES_BIN -A FORWARD -i ${bridge} -o ${bridge} -j ACCEPT
+      done
+
+    else
+      # DomU support
+      echo "DomainU"
+    fi
+  fi
+}
+
+# Progress Spinner
+spinner() {
+  local SPIN
+  case "$ROT" in
+        0)
+          SPIN=\-
+          ROT=1
+          ;;
+        1)
+          SPIN=\\
+          ROT=2
+          ;;
+        2)
+          SPIN=\|
+          ROT=3
+          ;;
+        3)
+          SPIN=\/
+          ROT=0
+          ;;
+        esac
+  echo -e "\b\b\b\b\b (${SPIN}) \c "
+  return
+}
+
+# Minimal Netfilter
+minimum_netfilter () {
+
+  echo " *** WARNING ***"
+  echo "###########################################################"
+  echo "#               DUE TO CONFIGURATION ERRORS               #"
+  echo "#          ALL NETWORK CONNECTIVITY IS DISABLED!          #"
+  echo "###########################################################"
+  echo " *** WARNING ***"
+
+  for local_net in $LOCAL_NETS; do
+
+    # Split up local_nets 
+    iface=`echo $local_net |cut -s -d: -f1`
+    ip=`echo $local_net |cut -s -d: -f2`
+
+    # Give us bare minimum access to fix the situation 
+    $IPTABLES_BIN -A INPUT -i ${iface} -p icmp -d ${ip} --icmp-type echo-request -j ACCEPT              # ICMP
+    $IPTABLES_BIN -A INPUT -i ${iface} -p tcp -d ${ip} --dport 22 -j ACCEPT                             # SSH
+    $IPTABLES_BIN -A INPUT -i ${iface} -p ALL -d ${ip} -m state --state ESTABLISHED,RELATED -j ACCEPT   # Related Connections
+
+  done
+  exit 1
+
+}
+
+#############################################################################################
+
+# Bash version check
+bash_check
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to modify firewall!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $PGREP_BIN $GREP_BIN $SORT_BIN $AWK_BIN $IP_BIN $IPTABLES_BIN $IPTABLES_RESTORE_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Make interface changes as required..
+if [ -x "$NETWORK_CONFIG_BIN" ]; then
+  $NETWORK_CONFIG_BIN
+fi
+
+# Generate our local interface/address/network triplets and Globals
+LOCAL_NETS=$(
+  for tuple in `$IP_BIN route show proto kernel scope link |$AWK_BIN '{ print $3":"$5":"$1 }'`; do
+    iface=`echo $tuple |cut -s -d: -f1`
+    ip=`echo $tuple |cut -s -d: -f2`
+    netmask=`echo $tuple |cut -s -d: -f3`
+  $IP_BIN addr sh |$GREP_BIN -e "^    inet.*${iface} *$" |cut -d'/' -f1 |$AWK_BIN -v ni="$iface" -v nm="$netmask" '{ print ni":"$2":"nm }'
+done )
+
+ROT=0
+LOOP_NUM=0
+
+# Handle Stops
+if [ "`echo $1 |$GREP_BIN -ic 'stop'`" -ne 0 ]; then
+  echo -n "Stopping Firewall... "
+  reset_netfilter
+  $IPTABLES_BIN -P INPUT ACCEPT
+  echo "Done."
+  minimum_netfilter > /dev/null
+  exit 0
+fi
+
+# Check for network services configuration
+if [ ! -e "$NET_SERVICES_CONFIG" ]; then
+  echo "ERROR: Cannot find local network configuration file ($NET_SERVICES_CONFIG)!"
+
+  # Reset netfilter
+  reset_netfilter
+
+  # Enable debugging
+  minimum_netfilter
+fi
+
+# Load local services configuration
+. $NET_SERVICES_CONFIG
+
+# Generate the Netfilter Batchfile
+BATCHFILE="/dev/shm/.firewall-$$"
+SERVICEFILTER_BATCHFILE="$BATCHFILE-service"
+NETFILTER_BATCHFILE="$BATCHFILE-netfilter"
+
+if ! touch $SERVICEFILTER_BATCHFILE $NETFILTER_BATCHFILE; then
+  echo "Unable to write batchfile ($SERVICEFILTER_BATCHFILE).. Exiting!"
+  exit 1
+else
+  echo "*filter" >> $SERVICEFILTER_BATCHFILE
+  echo "*filter" >> $NETFILTER_BATCHFILE
+  trap "{ rm -f $SERVICEFILTER_BATCHFILE $NETFILTER_BATCHFILE; }" EXIT
+fi
+
+# Generate service rules for firewall
+echo -n "Generating service firewall rules...     "
+
+# Allow related traffic on all local eth/vlan interfaces 
+for iface in `echo "$LOCAL_NETS" |$GREP_BIN -e '^\(eth\|vlan\)[[:digit:]]\{1,\}:' |cut -d: -f1 |$SORT_BIN -u`; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  if [ `echo $iface |$GREP_BIN -cwe "\(eth\|vlan\)${MGMT_VLAN}"` -eq 1 ]; then
+
+    # Enable related traffic on mgmt interfaces
+    echo "-A INPUT -i ${iface} -s ${MGMT_NETWORK} -d ${MGMT_NETWORK} -p ALL -m state --state ESTABLISHED,RELATED -j ACCEPT" >> $SERVICEFILTER_BATCHFILE       # Related Connections
+
+  else
+
+    # Enable related traffic on all local interfaces 
+    echo "-A INPUT -i ${iface} -p ALL -m state --state ESTABLISHED,RELATED -j ACCEPT" >> $SERVICEFILTER_BATCHFILE   	# Related Connections
+
+  fi
+
+done
+
+# Process all network services
+for service in ${NET_SERVICES[*]}; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Split out the values
+  global_ha_ip=""
+  global_ha_ip=`echo $service |cut -s -d: -f1`
+
+  # Ignore the LVS global configuration lines
+  if [ "${global_ha_ip}x" != "x" ]; then
+    continue
+  fi
+
+  # Ignore interfaces that don't exist locally
+  iface=`echo $service |cut -s -d: -f5`
+
+  for sub_iface in `echo "$LOCAL_NETS" |$GREP_BIN -e "${iface}:"`; do
+
+    ip=`echo "$sub_iface" |cut -s -d: -f2`
+    if [ "${ip}x" == "x" ]; then
+      continue
+    fi
+
+    source_mod=""
+    if [ `echo $iface |$GREP_BIN -cwe "\(eth\|vlan\)${MGMT_VLAN}"` -eq 1 ]; then
+      source_mod="-s $MGMT_NETWORK"
+    fi
+    proto=`echo $service |cut -s -d: -f3`
+    port=`echo $service |cut -s -d: -f4`
+
+    if [ "${proto}" != "icmp" ]; then
+
+      # Apply rules for TCP/UDP services
+      echo "-A INPUT -i ${iface} -p ${proto} -d ${ip} ${source_mod} --dport ${port} -j ACCEPT" >> $SERVICEFILTER_BATCHFILE		# INPUT 
+
+    else
+    
+      # Apply rules for ICMP connections
+      echo "-A INPUT -i ${iface} -p icmp -d ${ip} ${source_mod} --icmp-type echo-request -j ACCEPT" >> $SERVICEFILTER_BATCHFILE		# ICMP
+
+    fi
+
+  done
+
+done
+
+echo "COMMIT" >> $SERVICEFILTER_BATCHFILE
+echo -en "\b\b\b\b\b Done.\n"
+
+# Generate service rules for firewall
+echo -n "Generating netfilter firewall rules...     "
+
+ICMP_TYPES=`$IPTABLES_BIN -p icmp -h |$AWK_BIN '/^Valid ICMP Types:$/,0' |$GREP_BIN -ve "^Valid ICMP Types:$" |$AWK_BIN '{print $1}'`
+
+for filter_line in ${NET_FILTER[*]}; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Split out the values
+  FILTER_OUTPUT=""
+  filter_src=`echo $filter_line |cut -s -d: -f1`
+  filter_src_port=`echo $filter_line |cut -s -d: -f2`
+  filter_dst=`echo $filter_line |cut -s -d: -f3`
+  filter_dst_port=`echo $filter_line |cut -s -d: -f4`
+  filter_proto=`echo $filter_line |cut -s -d: -f5`
+  filter_iface=`echo $filter_line |cut -s -d: -f6`
+
+  # Sanity check the filter rule
+  if [ "${filter_iface}x" == "x" ]; then
+    echo -ne "\nNETFILTER Warning: Interface is required! Skipping..     "
+    continue
+  # Ignore invalid protocols
+  elif ! [[ $filter_proto =~ ^(tcp|udp|icmp|ipencap)$ ]]; then
+    echo -ne "\nNETFILTER Warning: Protocol (tcp|udp|icmp|ipencap) is required! Skipping..     "
+    continue
+  # Ignore tcp/udp/icmp without IP assignment
+  elif [ "${filter_src}x" == "x" ] && [ "${filter_dst}x" == "x" ]; then
+    echo -ne "\nNETFILTER Warning: Source and/or Destination IP address required! Skipping..     "
+    continue
+  # Ignore lines with no source or destination specified 
+  elif [[ $filter_proto =~ ^(tcp|udp)$ ]] && ([ "${filter_src_port}x" == "x" ] && [ "${filter_dst_port}x" == "x" ]); then
+    echo -ne "\nNETFILTER Warning: Source and/or Destination port required for connections! Skipping..     "  
+    continue
+  fi
+
+  if [ "${filter_src}x" != "x" ]; then
+    FILTER_OUTPUT+="-s ${filter_src} "
+  fi
+
+  if [ "${filter_dst}x" != "x" ]; then
+    FILTER_OUTPUT+="-d ${filter_dst} "
+  fi
+
+  if [[ $filter_proto =~ ^(tcp|udp|ipencap)$ ]]; then
+    if [ "${filter_dst_port}x" != "x" ]; then
+      FILTER_OUTPUT+="--dport ${filter_dst_port} "
+    fi
+    if [ "${filter_src_port}x" != "x" ]; then
+      FILTER_OUTPUT+="--sport ${filter_src_port} "
+    fi
+  else
+    if [ `echo "$ICMP_TYPES" |$GREP_BIN -ce ^${filter_dst_port}$` -eq 1 ] ; then
+      FILTER_OUTPUT+="--icmp-type ${filter_dst_port} "
+    else
+      echo -ne "\nNETFILTER Warning: Invalid ICMP Type! Skipping..     "
+      continue
+    fi
+  fi
+
+  if [ "${FILTER_OUTPUT}x" != "x" ]; then
+    # Apply filter rule
+    echo "-A INPUT -i ${filter_iface} -p ${filter_proto} ${FILTER_OUTPUT}-j ACCEPT" >> $NETFILTER_BATCHFILE		# Apply Filter Rule
+  fi
+
+done
+echo "COMMIT" >> $NETFILTER_BATCHFILE
+echo -en "\b\b\b\b\b Done.\n"
+
+# Reset firewall
+echo -n "Applying $((`cat $SERVICEFILTER_BATCHFILE |wc -l` -2 )) firewall service rules... "
+reset_netfilter
+
+# Bulkload service firewall rules or fail
+cat $SERVICEFILTER_BATCHFILE |$IPTABLES_RESTORE_BIN -n
+if [ $? -ne 0 ]; then
+  echo "Problems applying the firewall services.. Aborting!"
+  minimum_netfilter
+  exit 1
+else
+  echo "Done."
+fi
+
+echo -n "Applying $((`cat $NETFILTER_BATCHFILE |wc -l` - 2 )) firewall netfilter rules... "
+cat $NETFILTER_BATCHFILE |$IPTABLES_RESTORE_BIN -n
+if [ $? -ne 0 ]; then
+  echo "Problems applying the network filters.. Skipping!"
+else
+  echo "Done."
+fi
+
+# Apply HA service rules
+if [ -e "$LVS_CONFIG_BIN" ] && [ -x "$LVS_CONFIG_BIN" ]; then
+  $LVS_CONFIG_BIN
+fi
+
+# Apply Routed Services
+if [ -e "$ROUTE_CONFIG_BIN" ] && [ -x "$ROUTE_CONFIG_BIN" ]; then
+  $ROUTE_CONFIG_BIN
+fi
+
+# Apply Bogon Filters
+if [ -e "$BOGON_FILTER_BIN" ] && [ -x "$BOGON_FILTER_BIN" ]; then
+  $BOGON_FILTER_BIN
+fi
+
+# We are alive!
+
+###############################################################################################################
+# Space Firewall Workaround (REMOVE ME!!) -V
+
+if [ -e /etc/enki/cluster-info ]; then
+
+  # Grab the cluster info file
+  . /etc/enki/cluster-info
+
+  # If we have a valid space variable
+  if [[ ! -z "${SPACE_IP}" ]]; then
+    # Find our space interface
+    space_iface=`$IP_BIN addr show |$GREP_BIN -e "inet ${SPACE_IP}" |$AWK_BIN '{print $7}' 2> /dev/null`
+
+    if [ "${space_iface}" != "" ]; then
+      # Space Server
+      $IPTABLES_BIN -A INPUT -d ${SPACE_IP} -p tcp -m multiport --dports 1024:65535 -i ${space_iface} -j ACCEPT
+    else
+      # Space Client
+      $IPTABLES_BIN -A INPUT -s ${SPACE_IP} -p tcp -m multiport --dports 1024:65535 -i `$IP_BIN ro sh |$GREP_BIN -e "default via" |$AWK_BIN '{print $5}'` -j ACCEPT
+    fi
+  fi
+
+fi
+# Space Firewall Workaround (REMOVE ME!!) -V
+###############################################################################################################

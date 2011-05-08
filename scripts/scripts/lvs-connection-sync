@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# This script starts, stops and monitors the LVS Kernel Connection Sync
+
+# Michael Vallaly ver 2.0 (Jan '10)
+
+HEARTBEAT_INTERFACE="vlan500"
+AWK_BIN="/usr/bin/awk"
+IPVSADM_BIN="/sbin/ipvsadm"
+SED_BIN="/bin/sed"
+
+#########################################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne "0" ]; then 
+  echo "Superuser persmissions required to manage LVS"
+  exec sudo $0 $@
+fi
+
+# Change the sync daemon
+update_sync_daemon () {
+
+local function_status=0
+
+# Check for required binaries
+for req_bin in $AWK_BIN $IPVSADM_BIN $SED_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Split the action/state pairs and process them
+for pair in $1; do 
+
+  local action=`echo ${pair} |cut -d: -f1 -s`
+  local state=`echo ${pair} |cut -d: -f2 -s`
+
+  if [ "${action}" == "start" ]; then
+     if echo -ne ${KERNEL_THREADS} |grep -qw "ipvs_sync${state}"; then continue; fi
+    local postcmd="--mcast-interface=${HEARTBEAT_INTERFACE}"
+  else
+     if ! echo -ne ${KERNEL_THREADS} |grep -qw "ipvs_sync${state}"; then continue; fi
+    local postcmd=""
+  fi
+
+  # Run the command
+  eval "${IPVSADM_BIN} --${action}-daemon=${state} ${postcmd}"
+  let function_status+=$?
+
+done 
+
+return ${function_status}
+
+}
+
+# Provide some insight to the LVS status
+monitor_cmd () {
+
+if [ $(echo -ne $KERNEL_THREADS |wc -w) -gt 0 ]; then
+ case "$KERNEL_THREADS" in
+   ipvs_syncbackup ) echo "LVS Connection Replay Active";;
+   ipvs_syncmaster ) echo "LVS Connection Forwarding Active";;
+                 * ) echo "LVS Connection Sync Active";;
+ esac
+ exit 0
+else
+  echo "LVS Connection Sync Inactive"
+  exit 1
+fi
+
+}
+
+# Do the work
+
+KERNEL_THREADS=`ps ax |$SED_BIN -n '/\[ipvs_sync[a-zA-Z]*\]/p' |$AWK_BIN '{print $5}' |tr -d '[]'`
+
+usage="USAGE: $0 [ start | stop | master | backup | monitor | status ]"
+
+case $1 in
+    backup ) echo -n "Enabling LVS Connection Replay.. "
+	     if update_sync_daemon "stop:master start:backup"; then echo "Done."; fi
+             exit 0 ;;
+    master ) echo -n "Enabling LVS Connection Forwarding.. "
+	     if update_sync_daemon "start:master stop:backup"; then echo "Done."; fi
+             exit 0 ;;
+      stop ) echo -n "Stopping LVS Connection Sync.. "
+             if update_sync_daemon "stop:master stop:backup"; then echo "Done." ; fi
+             exit 0 ;;
+     start ) echo -n "Starting LVS Connection Sync.. "
+	     if update_sync_daemon "start:master start:backup"; then echo "Done." ; fi
+             exit 0 ;;
+   monitor ) monitor_cmd ;;
+   status  ) monitor_cmd ;;
+    * ) echo $usage
+        exit 1;;
+esac
+
+echo "Failed!"
+exit 1

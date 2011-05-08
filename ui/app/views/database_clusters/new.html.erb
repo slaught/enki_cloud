@@ -1,0 +1,11 @@
+<% set_html_title "Create New Database Cluster" %>
+<h1>New Database Cluster</h1>
+<% # form_for(@database_cluster, :url => {:action => 'create'} ) do |f| %>
+<% form_for(@database_cluster ) do |f| %>
+
+<%= render :partial => 'edit', :locals => {:f => f, :services => @services, :database_configs => @database_configs } %> 
+
+<p><%= f.submit "Create" %></p>
+<% end %>
+<%= link_to 'List', database_clusters_path %>
+

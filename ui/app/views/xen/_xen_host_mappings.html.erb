@@ -1,0 +1,107 @@
+<td class="host outer">
+  <div style="position:relative; height:100%;">
+      <strong><%= link_to_node host %></strong>
+    <% if permitted_to? :create, :xen %>
+      <%= render :partial => 'show_add_mapping_form_button', :locals => {:host => host} %>
+    <% end %>
+</td>
+<td valign="top" class="outer">
+  <% unless host.xen_capacity.nil? %>
+  <table>
+    <tr>
+      <td>
+        <strong>CPU</strong>
+      </td>
+      <td class="<%= 
+        if host.percent_resources_used[1] > 100
+          "overloaded"
+        elsif host.percent_resources_used[1] > 70
+          "kindafull"
+        else
+          "ok"
+        end %>">
+        <%= host.percent_resources_used[1] %>%
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <strong>MEM</strong>
+      </td>
+      <td class="<%=
+        if host.percent_resources_used[0] > 100
+          "overloaded"
+        elsif host.percent_resources_used[0] > 70
+          "kindafull"
+        else
+          "ok"
+        end %>">
+        <%= host.percent_resources_used[0] %>%
+      </td>
+    </tr>
+  </table>
+  <% else %>
+  <table>
+    <tr>
+      <td><strong>CPU</strong></td>
+      <td><strong>NA</strong></td>
+    </tr>
+    <tr>
+      <td><strong>MEM</strong></td>
+      <td><strong>NA</strong></td>
+    </tr>
+  </table>
+  <% end %>
+</td>
+<td class="outer">
+    <table style="width:100%;">
+    <% all_guests[0].each_with_index do |du, index| %>
+      <tr>
+        <td <%= 'class="xen_compare_error"' if du.nil? %>>
+          <% if du.nil? %>
+              <% if (not Node.find_by_fn_prefix(all_guests[2][index]).blank?) and permitted_to? :manage, :xen %>
+                <%= link_to_remote "Add Mapping", :html => {
+                          :action => { :action => "map_to_host", :host_id => host.id,
+                            :guest_fn_prefix => all_guests[2][index]}},
+                        :url => url_for({ :action => "map_to_host", :host_id => host.id,
+                          :guest_fn_prefix => all_guests[2][index]}) %>
+              <% elsif permitted_to? :create, :node %>
+                <%= link_to "Create Node", {:controller => "node", :action => "new", :fn_prefix => all_guests[2][index], :node_type => "virtual"} %>
+              <% else %>
+                &nbsp;
+              <% end %>
+          <% else %>
+            <div style="width:100%;">
+            <div style="float:left; margin-right:1em;"><%= link_to_node Node.find_by_fn_prefix(du) %></div>
+            <% form_remote_tag(:html => {:action => {:action => "unmap_guest",
+                    :host_id => host.id, :guest_fn_prefix => du},
+                    :title => 'Unassign guest',
+                    :style => "display: inline; float: right;"},
+                  :url => url_for({ :action => "unmap_guest",
+                    :host_id => host.id,
+                    :guest_fn_prefix => du})) do %>
+              <%= image_submit_tag "/images/silk/link_break.png", :alt => 'Unassign guest' %>
+            <% end if permitted_to? :delete, :xen and live_map[host.to_label] %>
+            </div>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+    </table>
+</td>
+<td class="outer">
+    <table style="height:100%;">
+    <% if live_map[host.to_label] %>
+    <% for du in all_guests[1] %>
+      <tr>
+        <td <%= 'class="xen_compare_warning""' if du.nil? %>>
+          <%= du or "&nbsp;"%>
+        </td>
+      </tr>
+    <% end %>
+    <% else %>
+      <tr>
+        <td><strong>NO DATA</strong></td>
+      </tr>
+    <% end %>
+    </table>
+</td>

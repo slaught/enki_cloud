@@ -1,0 +1,18 @@
+  <%= f.error_messages %>
+<p>Required: <%= f.label :model_no %><br/> <%= f.text_field :model_no %></p>
+<p>Required: <%= f.label :manufacturer %><br/> <%= f.text_field :manufacturer %></p>
+
+<% for i in [:cpu_cores, :megabytes_memory , :power_supplies, :cpu_speed_megahertz, :max_amps_used,:max_btu_per_hour,:rack_size, :network_interfaces] %>
+<p> <%= f.label i %><br/> <%= f.text_field i %></p>
+<% end %>
+<p> </p>
+<p><%= f.label "Serial Console Baud Rate" %><br/>
+<%= collection_select(:machine, :serial_baud_rate, SerialBaudRate.all, :speed, :to_label, :options =>{:prompt => "-Select a Baud Rate"}) %> 
+</p>
+
+<p><%= f.label "DCE or DTE?" %><br/>
+     <%= select(:machine, :serial_dce_dte, [['DCE',true],['DTE',false ]]) %> </p>
+
+<p><%= f.label "Flow Control?" %><br/> 
+    <%= select(:machine, :serial_flow_control, [['None','none'],['Hardware','hardware'],['Software','softwre']]) %>
+</p>

@@ -1,0 +1,32 @@
+<% set_html_title "Services" %>
+<h1>Services</h1>
+<div><ul> <li> <%= link_to "Create new Service", :action => "new" %> </li> </ul> </div> 
+<table border="1" class="sortable">
+  <tr class="thead">
+  <!-- % for column in Service.content_columns % -->
+  <th>Name</th>
+  <th>Description</th>
+  <th>URL</th>
+  <th class="sorttable_numeric">IP Address</th>
+  <th class="sorttable_numeric">Service Port</th>
+  <th>Availability</th>
+  <th class="sorttable_numeric">Local Port</th>
+  </tr>
+  
+<% for entry in @services %>
+  <tr>
+    <td><%= link_to entry.name, :action => "show#{@scaffold_suffix}", :id => entry %></td>  
+  <% for column in [:description, :url, :ip_address, :service_port, :availability, :local_port] %>
+    <td <%= "sorttable_customkey=\"#{sorttable_ip(entry.ip_address)}\"" if column == :ip_address %>><%= entry.send(column) %></td>
+  <% end %>
+<!--    <td><%= link_to "Edit", :action => "edit#{@scaffold_suffix}", :id => entry %></td>
+    <td><%= link_to "Destroy", {:action => "destroy#{@scaffold_suffix}", :id => entry}, { :confirm => "Are you sure?", :method => :post } %></td> -->
+  </tr>
+<% end %>
+</table>
+<!-- 
+ %= link_to "Previous page", { :page => @cluster_pages.current.previous } if @cluster_pages.current.previous % 
+ %= link_to "Next page", { :page => @cluster_pages.current.next } if @clsuter_pages.current.next %  
+-->
+<br />
+<%= link_to "New", :action => "new" %>

@@ -1,0 +1,211 @@
+#!/bin/bash
+
+# Michael Vallaly (Jan 2010) Ver 1.2
+
+# Pushes itcfg DB changes to nodes.
+
+STAGING_DIR="/export/web/push_config_layout"
+INSTALL_DIR="/export/web/cnu_it/deployment"
+
+BASEDOMAIN="example.com"
+DEPLOY_KEY="/etc/cnu/keys/deploy-itcfg.key"
+
+DEPLOY_CFG="${INSTALL_DIR}/itcfg-dply-hosts.cfg"
+
+GIT_BIN="/usr/bin/git"
+RSYNC_BIN="/usr/bin/rsync"
+SSH_BIN="/usr/bin/ssh"
+
+APC_SET_NAME_BIN="${INSTALL_DIR}/helpers/apc_set_name"
+HP_SET_NAME_BIN="${INSTALL_DIR}/helpers/hp_set_name"
+
+################################################################################
+
+usage="USAGE: $0 [-n dry-run] [-c client] [-a all_clients] [-l list_clients] [-p update_all_pdus] [-s update_all_scs] [-g update_switches] ... "
+
+while getopts "c:anlgps" options; do
+  case $options in
+    c ) client_list+=" $OPTARG";;
+    n ) dryrun="--dry-run -vP";;
+    g ) push_switch=1;;
+    l ) list_clients=1;;
+    a ) all_clients=1;;
+    p ) push_pdu=1;;
+    s ) push_scs=1;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to access the deployment key! Exiting.."
+  exit 1
+fi
+
+# Load our configuration file
+if [ ! -r $DEPLOY_CFG ]; then
+  echo "Cannot read the deployment configuration file! Exiting.."
+  exit 1
+else
+ . $DEPLOY_CFG
+fi
+
+# Check that we can read the deployment key.
+if [ ! -r $DEPLOY_KEY ]; then
+  echo "Cannot read the deployment key! Exiting.."
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $GIT_BIN $RSYNC_BIN $SSH_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+
+
+# List the configured nodes 
+if [[ $list_clients == "1" ]]; then 
+  echo "The following are valid deployment hosts:"
+  echo ${DEPLOYMENT_NODES[*]} |tr -t ' ' '\n' |cut -d: -f1 
+  exit 0
+fi
+
+# If we want all clients use DEPLOYMENT_NODES 
+if [[ $all_clients == "1" ]]; then 
+  client_list+=" $(echo ${DEPLOYMENT_NODES[*]} |tr -t ' ' '\n' |cut -d: -f1)"
+elif [[ $push_pdu == "1" ]]; then
+  client_list+=" $(echo ${DEPLOYMENT_NODES[*]} |tr -t ' ' '\n' |cut -d: -f1 |grep -e '^pdu')"
+elif [[ $push_scs == "1" ]]; then
+  client_list+=" $(echo ${DEPLOYMENT_NODES[*]} |tr -t ' ' '\n' |cut -d: -f1 |grep -e '^scs')"
+fi
+
+# We must have a client list
+if [ -z "$client_list" ]; then
+    echo "$usage" 
+    exit 1
+fi
+
+# Parse Slaves from configuration file array
+TUPLE_NUM=0
+for line in ${DEPLOYMENT_NODES[*]}; do
+  for node in $client_list; do
+    node_name=`echo $line |cut -s -d: -f1`
+    if [ "$node" == "$node_name" ]; then
+      NODE_TUPLES=`echo "$NODE_TUPLES" $line |tr -t " " "\n"`
+      let TUPLE_NUM="$TUPLE_NUM + 1"
+    fi
+  done
+done
+
+# Total and check if we have anything to do
+if [ "$TUPLE_NUM" -le 0 ]; then
+  echo "Error: No requested target machine(s) could be found in the configuration! Aborting..."
+  exit 1
+fi
+
+# Stage the files
+GIT_TAG=`date +%Y%m%d%H%M%S`
+# Global SSH Options
+SSH_OPT="-o StrictHostKeyChecking=no -o PasswordAuthentication=no -i ${DEPLOY_KEY}"
+
+# Do the git checkout.
+echo "Checking out configuration code..."
+cd $STAGING_DIR
+$GIT_BIN pull
+$GIT_BIN checkout -f
+if [ "${dryrun}x" == "x" ]; then
+  $GIT_BIN tag -a "${GIT_TAG}" -m "Configuration Pushed by $SUDO_USER. Have a great day!"
+fi
+# Push the checkout to the repo
+$GIT_BIN push repo
+chown root:root ${STAGING_DIR} -R
+
+# Cycle through all the clients
+for tuple in $NODE_TUPLES; do 
+
+  server=`echo $tuple |cut -d: -f1`
+  remote_baseconfig_dir=`echo $tuple |cut -d: -f2`
+
+#  if [[ "${server}" =~ ^scs[0-9][0-9]. ]] && [ "$push_scs" != "1" ]; then
+#    continue
+#  elif [[ "${server}" =~ ^pdu[0-9][0-9][a-z]. ]] && [ "$push_pdu" != "1" ]; then
+#    continue
+#  elif [[ "${server}" =~ ^hpswi[0-9][0-9][0-9]. ]] && [ "$push_switch" != "1" ]; then
+#    continue
+#  fi
+
+  # Sanity check
+  if [ "${server}x" == "x" ] || [ "${remote_baseconfig_dir}x" == "x" ]; then
+    continue
+  fi
+
+  case "${server}" in
+    bootstrap*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- dns/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- postgres/\n- scs/\n- space/\n- xen\n"
+      ;;
+    load*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- scs/\n- nagios/\n- postgres/\n- space/\n- uuid/\n- xen\n"
+      ;;
+    xen*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- nagios/\n- postgres/\n- scs/\n- space/\n- uuid/\n"
+      ;;
+    postgres*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- nagios/\n- scs/\n- space/\n- uuid/\n- xen/\n"
+      ;;
+    us01*|uk01*|jv01*|ccm01*|au01*|ca01*|sol01*|pi03*|lay0*|blog*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- nagios/\n- postgres/\n- scs/\n- uuid/\n- xen/\n"
+      ;;
+    scs*)
+      EXCLUDE_LIST="- asa/\n- cdn/\n- dns/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- nagios/\n- node/\n- postgres/\n- space/\n- uuid/\n- xen/\n"
+      ;;
+    static*)
+      EXCLUDE_LIST="- asa/\n- downpage/\n- ha.d/\n- haview.docroot\n- html/\n- lvs/\n- nagios/\n- scs/\n- postgres/\n- space/\n- uuid/\n- xen/\n"
+      ;;
+    hpswi*)
+      if [ "${dryrun}x" != "x" ]; then
+        echo "Pushing Switch Updates - ${server}.."
+      else
+        $HP_SET_NAME_BIN -f ${STAGING_DIR}/node/${server}/switch.cfg
+      fi
+      continue
+      ;;
+    pdu*)
+      if [ "${dryrun}x" != "x" ]; then
+        echo "Pushing PDU Updates - ${server}.."
+      else
+        $APC_SET_NAME_BIN -f ${STAGING_DIR}/node/${server}/pdu.cfg     
+      fi
+      continue
+      ;;
+    nagios*)
+      EXCLUDE_LIST="- asa/\n- dns/\n- downpage/\n- ha.d/\n- html/\n- lvs/\n- scs/\n- space/\n- uuid/\n- xen/\n"
+      ;;
+    *)
+    echo "I don't currently handle this node (${server})! Skipping..."
+    continue
+    ;;
+  esac 
+
+   echo -n "Syncing - ${server}.. "
+   echo -e "$EXCLUDE_LIST" |${RSYNC_BIN} -e "$SSH_BIN ${SSH_OPT}" -a ${dryrun} --exclude=".git" --filter='. -' --delete ${STAGING_DIR}/ root@${server}.${BASEDOMAIN}:${remote_baseconfig_dir}
+
+   if [ "${dryrun}x" != "x" ]; then
+     echo "Done Syncing - ${server}.."
+   else
+
+     # If we are a serial console reload the config
+     if [[ "${server}" =~ ^scs[0-9][0-9]. ]]; then 
+       $SSH_BIN ${SSH_OPT} root@${server}.${BASEDOMAIN} update-scs
+     else
+       echo "Done."
+     fi
+   fi
+done
+
+echo "Configuration Push Complete."

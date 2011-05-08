@@ -1,0 +1,51 @@
+#!/bin/sh
+
+# List of scripts to install on the client machine
+PRE_EXISTING_SCRIPTS="enki_apcsnmp_stonith enki-bogon-filter enki-chb-interface enki-clamscan enki-enkiapp-ramdisk enki-configure-lvs.lb-tun enki-configure-lvs.node-tun enki-configure-vlan enki-deploy-local-cfg enki-dsh-wrapper enki-firewall enki-ha-interface enki-logrotate enki-mgmt-interface enki-process-node-logs enki-transfer-file enki-update-apt-packages commit-dns-changes dns-increment ipvstop lvs-connection-sync mime_strip.html_bodies.pl xen-enki-startup xmpp_send"
+
+# This scripts updates the sudoers file with additional lines
+SUDO_FILE="/etc/sudoers"
+
+# Marker Labels
+BEGIN_MARKER="### ENKI BEGIN ###"
+END_MARKER="### ENKI END ###"
+
+# Additional Sudo configurations ('\\' must exist at the end of each line)
+SECTION_CONTENTS="\\
+%enkiadmin  ALL = NOPASSWD: /enki/bin/downnode\\
+%enkiadmin  ALL = NOPASSWD: /enki/bin/upnode\\
+"
+
+#########################################################################################
+
+# Update Scripts
+
+case $1 in
+install)
+  echo -e "${1}ing"
+  for file in ${PRE_EXISTING_SCRIPTS} ; do
+    if [ -e /etc/enki/scripts/${file} ]; then
+      rm -f /etc/enki/scripts/${file} 2> /dev/null
+    fi
+  done
+;;
+upgrade)
+  echo -e "${1}\ring"
+;;
+*) /bin/true ;;
+esac
+
+# Update Sudoers file
+
+# Generate the new sudo section
+SUDO_CONTENTS="${BEGIN_MARKER}${SECTION_CONTENTS}${END_MARKER}"
+
+# If we already have the markers, replace the section
+if [ `grep -ce "$BEGIN_MARKER" -e "$END_MARKER" ${SUDO_FILE}` -ge 2 ]; then
+  sed -i -e "/^${BEGIN_MARKER}/,/^${END_MARKER}/c${SUDO_CONTENTS}" ${SUDO_FILE}
+# Marker section doesn't exist just append the changes
+else
+  SUDO_OLD_CONTENTS=`cat $SUDO_FILE`
+  echo -e "$SUDO_OLD_CONTENTS\n\n`echo "$SUDO_CONTENTS" | tr -d '\\'`" > ${SUDO_FILE}
+fi
+

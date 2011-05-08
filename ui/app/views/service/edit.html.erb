@@ -1,0 +1,43 @@
+<% set_html_title("#{@service.to_label} (Edit)", "Services")  %>
+<h1>Edit  Service</h1>
+<dl>
+
+<% form_for(:service, @service, :url => {:action => 'update', :id => @service}) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :name %><br />
+    <%= f.text_field :name %>
+  </p>
+  <p>
+    <%= f.label :description %><br />
+    <%= f.text_field :description %>
+  </p>
+  <p>
+    <%= f.label :ip_address %><br />
+  <% if permitted_to? :manage, :service then %>
+    <%= f.text_field :ip_address %><br />
+    If you don't know what you are doing, don't change this!
+  <% else %>
+    <%= @service.ip_address %>
+  <% end %>
+  </p>
+  <p> <%= f.label :protocol_id   %><br /> 
+   <%= collection_select(:service,  :protocol_id, Protocol.all , :protocol_id, :proto ) %>
+  </p>                                          
+  
+  <p> <%= f.label :service_port  %><br /> <%= f.text_field :service_port    %> </p>
+  <p> <%= f.label :local_port  %><br /> <%= f.text_field :local_port    %> </p>
+  <p>
+    <%= f.label :url %><br /> <%= f.text_field :url %><br />
+    This is the fourth argument passed to the Nagios HA check
+  </p>
+  <p> <%= f.label :check_url %><br /> <%= f.text_field :check_url %> </p>
+
+
+  <p> <%= f.submit "Update" %> </p>
+<% end %>
+
+<%= link_to 'Show', :action => 'show', :id => @service%> |
+<%= link_to 'Cancel', :action => 'list' %>
+
+

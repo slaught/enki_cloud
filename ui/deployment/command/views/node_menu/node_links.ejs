@@ -1,0 +1,12 @@
+<% if ( $.isArray( node.link ) ) { 
+		for (var l=0; l<node.link.length; l++) { 
+			var link = node.link[l]; %>
+			
+				<div <%= plugin('phui_tooltip') %> class="node_link"><a href="<%= link %>" target="_blank"><%= link %></a></div>			
+			
+		<% } 
+	} else { %>
+					
+			<div <%= plugin('phui_tooltip') %> class="node_link"><a href="<%= node.link %>" target="_blank"><%= node.link %></a></div>
+		
+	<% } %>

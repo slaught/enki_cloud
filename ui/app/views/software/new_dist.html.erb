@@ -1,0 +1,16 @@
+<% set_html_title "Create New Distribution"%>
+<h1>Create New Distribution</h1>
+
+<% form_for(:distribution, @distribution, :url => { :action => 'create_dist'}) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.label :distribution %><br/>
+    <%= f.text_field :name%>
+  </p>
+  <p>
+    <%= f.submit "Create" %>
+  </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

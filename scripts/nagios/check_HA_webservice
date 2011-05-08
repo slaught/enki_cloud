@@ -1,0 +1,153 @@
+#!/bin/bash
+
+# Check HTTP/HTTPS HA service 
+
+# Michael Vallaly May '10 - Ver 1.0
+
+CURL_BIN="/usr/bin/curl"
+GREP_BIN="/bin/grep"
+SED_BIN="/bin/sed"
+
+OK_STATUS_CODES="200 301 302 401"
+WARN_STATUS_CODES="503"
+
+LEAD_POST_URL="/import-nagios"
+
+###################################################
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+CURL_OPTS="-isS -w \ncustom:%{time_total}:%{size_download}"
+SCHEMA="http://"
+
+# Check for script dependencies
+for bindep in $CURL_BIN $GREP_BIN $SED_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+# Print some usage
+usage="Usage: -H <host> or -I <IP> [-S ssl] [-p <port>] [-t <timeout>] [-u <url>]"
+
+while getopts "H:I:p:St:u:" options; do
+  case $options in
+    H ) host="`echo $OPTARG |tr -t '[:upper:]' '[:lower:]'`";;
+    I ) ip="$OPTARG";;
+    p ) port=":$OPTARG";;
+    S ) SCHEMA="https://";;
+    t ) timeout="--max-time $OPTARG";;
+    u ) url="$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 2 ]; then
+    echo $usage
+    exit 1
+fi
+
+# Enforce correct leads URLs 
+if [ `echo $host |$GREP_BIN -ce "^leads."` -eq 1 ]; then
+  # Reset the URL for leads
+  url=$LEAD_POST_URL
+  # Leads are done via POST
+  CURL_OPTS+=" -d name=nagios"
+  # Disable warning status codes (anything other than 200 http code is a failure)
+  WARN_STATUS_CODES=""
+fi
+
+# Cleanup the URL
+url=`echo ${url} |$SED_BIN -e 's!^/*!!1'`
+
+# Ensure SSL checks via IP address have a virtual host specified
+if [ "${ip}x" != "x" ] && [ "${host}x" == "x" ]; then
+  echo $usage
+  echo "Error: You must specify a virtual host name along with a HA IP address!"
+  exit $STATE_CRITICAL
+fi
+
+# Use IP address if one was specifed on the command line
+if [ "${ip}x" != "x" ]; then
+  machine=${ip}
+else
+  machine=${host}
+fi
+
+# Attempt to CURL the URL
+curl_output=`$CURL_BIN $CURL_OPTS $timeout ${SCHEMA}${machine}${port}/${url} 2>&1`
+curl_status=$?
+
+HTTP_HEADER=`echo "$curl_output" |tr -t '\r' '\n' |head -1`
+
+# Make sure curl was able to process the request or complain loudly
+if [ $curl_status -ne 0 ] && [ $curl_status -ne 51 ]; then
+  echo "CRITICAL - `echo $HTTP_HEADER |cut -d ' ' -f3-`"
+  exit $STATE_CRITICAL
+fi
+
+# Handle SSL cert common name issues
+if [ $curl_status -eq 51 ]; then
+
+  returned_domain=`echo $HTTP_HEADER |cut -d \' -f2 -s |tr -t '[:upper:]' '[:lower:]'`
+
+  # Check for wildcarded SSL certs
+  if [ `echo "${returned_domain}" |$GREP_BIN -ce '^*.'` -eq 1 ]; then
+
+    returned_wildcard_regex=`echo ${returned_domain} |$SED_BIN -e 's/^*./^[[:alnum:]]*[-.]*/g'`
+
+    # Handle wildcard SSL certs
+    if [ `echo "${host}" |$GREP_BIN -ce "${returned_wildcard_regex}"` -eq 0 ]; then
+
+      echo "CRITICAL - Hostname '${host}' does not match server SSL certificate name '${returned_domain}'!"
+      exit $STATE_CRITICAL
+
+    fi 
+
+  # Check the returned cert domain matches our virtual host
+  elif [ `echo "${host}" |$GREP_BIN -ce "${returned_domain}"` -eq 0 ]; then
+
+     echo "CRITICAL - Hostname '${host}' does not match server SSL certificate name '${returned_domain}'!"
+     exit $STATE_CRITICAL
+
+  fi
+
+  # Attempt the CURL again ignoring the SSL cert errors
+  curl_output=`$CURL_BIN $CURL_OPTS --insecure $timeout ${SCHEMA}${ip}${port}/${url} 2>&1`
+  curl_status=$?
+
+  HTTP_HEADER=`echo "$curl_output" |tr -t '\r' '\n' |head -1`
+
+  # Make sure curl was able to process the request or complain loudly
+  if [ $curl_status -ne 0 ]; then
+    echo "CRITICAL - `echo $HTTP_HEADER |cut -d ' ' -f3-`"
+    exit $STATE_CRITICAL
+  fi
+
+fi
+
+# Generate the status messages
+HTTP_STATUS_CODE=`echo $HTTP_HEADER |awk '{print $2}'`
+HTTP_STATUS_MSG=`echo $HTTP_HEADER |cut -d ' ' -f3-`
+HTTP_STATS=`echo "$curl_output" |$GREP_BIN -e 'custom:'`
+TYPE=`echo ${SCHEMA} |tr -d '[:punct:][:space:]' |tr -t '[:lower:]' '[:upper:]'`
+
+# Reporting Logic
+if [ `echo "$WARN_STATUS_CODES" |$GREP_BIN -cw "$HTTP_STATUS_CODE"` -eq 1 ]; then
+   echo "$TYPE WARNING - Downpage is enabled (${HTTP_STATUS_MSG})"
+   exit $STATE_WARNING
+elif [ `echo "$OK_STATUS_CODES" |$GREP_BIN -cw "$HTTP_STATUS_CODE"` -eq 1 ]; then
+   echo "$TYPE OK - `echo $HTTP_STATS |cut -d: -f3` bytes retreived in `echo $HTTP_STATS |cut -d: -f2` seconds."
+   exit $STATE_OK
+else
+   echo "$TYPE CRITICAL - ${SCHEMA}${host}${port}/${url} (${HTTP_HEADER})"
+   exit $STATE_CRITICAL
+fi
+

@@ -1,0 +1,21 @@
+<% set_html_title "Users" %>
+<h1>Users</h1>
+
+<table>
+  <thead>
+    <th>Name</th>
+    <th>Login</th>
+    <th>Role</th>
+  </thead>
+  <tbody>
+  <% for u in @users %>
+    <tr>
+      <td><%= u.name %></td>
+      <td><%= u.login %></td>
+      <td>
+      <%= u.roles.map {|r| "#{r.name} (#{r.description})"}.join("<br/>") %>
+      </td>
+    </tr>
+  <% end %>
+  </tbody>
+</table>

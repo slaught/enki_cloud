@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# This script checks for failed heartbeat nodes or stopped/failed resources in a cluster
+
+CRM_MON_BIN="/usr/sbin/crm_mon"
+
+#####################################################################################
+
+sudo -- ${CRM_MON_BIN} -s |cut -d: -f2-
+exit $?

@@ -1,0 +1,23 @@
+<% set_html_title "Create New San" %>
+<h1>New San</h1>
+
+<p>Be careful as you can't delete your errors</p>
+<% form_for(:san, @san, :url => {:action => 'create'}) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :san_name %><br />
+    <%= f.text_field :san_name %>
+  </p>
+  <p>
+    <%= f.label :description  %><br />
+    <%= f.text_field :description %>
+  </p>
+  <p> 
+    <%= f.label :network_id %><br />
+    <%= collection_select(:san, :network_id, @networks, :network_id, :to_label, {:prompt => "Select a Network"}) %> 
+  </p>
+    
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

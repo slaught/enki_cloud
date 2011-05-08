@@ -1,0 +1,6 @@
+etc/enki/scripts/enki-persistent-iscsiname
+etc/enki/scripts/enki-san-block-cfg
+etc/enki/scripts/enki-san-interface
+etc/xen/scripts/network-bridge-bonded
+etc/xen/scripts/network-bridge-vlan
+etc/xen/scripts/vif-bridge-vlan

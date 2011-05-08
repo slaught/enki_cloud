@@ -1,0 +1,58 @@
+#!/bin/bash
+
+CLI="/usr/bin/redis-cli"
+
+PREFIX="resque:queue"
+
+QUEUES=`$CLI keys ${PREFIX}:\*`
+
+
+echo "List of available queues"
+$CLI smembers resque:queues
+
+echo "Queue Lengths"
+for qq in $QUEUES;
+do
+  L=`$CLI llen $qq |awk '{print $2}'`
+  q=`echo $qq | awk -F: '{print $3}'`
+  if [ "$L" -lt 1 ] ; then
+    echo  "  $q is empty"
+  elif [ $L -eq 1 ] ; then
+    echo  "  $q has $L item"
+  else
+    echo  "  $q has $L items"
+  fi
+done
+
+if [ "x$1" == "xclear" ] ; then
+  echo -n "clearing '$2' queue : "
+  rc='1'
+  while [ "x$rc" != 'x(nil)' ] 
+  do
+    rc=`$CLI lpop ${PREFIX}:$2`
+    echo -n '.' 
+  done
+  echo ' done'
+fi
+exit 1
+
+
+# redis> llen resque:queue:itcfg
+# (integer) 2
+# redis> lpop resque:queue:itcfg
+# {"class":"Pushscs","args":[]}
+# redis> lpop resque:queue:itcfg
+# {"class":"Pushscs","args":[]}
+# redis> lpop resque:queue:itcfg
+# (nil)
+# 1. itcfg
+# 2. something
+# 3. push
+# 4. genlayout
+# redis> 
+# % redis-cli -h
+# usage: redis-cli [-h host] [-p port] [-a authpw] [-r repeat_times] [-n db_num]
+#   [-i] cmd arg1 arg2 arg3 ... argN
+# usage: echo "argN" | redis-cli [-h host] [-a authpw] [-p port] [-r repeat_times] [-n db_num] cmd arg1 arg2 ... arg(N-1)
+# If a pipe from standard input is detected this data is used as last argument.
+

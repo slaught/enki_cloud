@@ -1,0 +1,7 @@
+<% set_html_title "Create New Database Name"  %>
+<h1>New Database Name</h1>
+<% form_for(@database_name, :url => {:action => 'create'}) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f } %> 
+<p><%= f.submit "Create" %></p>
+<% end %>
+<%= link_to 'List', :action => :index %>

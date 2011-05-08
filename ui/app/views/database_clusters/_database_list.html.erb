@@ -1,0 +1,40 @@
+<% # :locals => {:database_names => @database_cluster.database_names, :database_cluster =>@database_cluster } %>
+
+<div id="database_name_list">
+<h3>Databases<h3>
+<%= render :partial => 'shared/partial_flashes' %>
+<table>
+<tr><th>names</th><th></th></tr>
+<% for db in database_names -%>
+<tr>
+  <td><%= link_to db.to_label, database_name_path(db) %></td>
+
+  <% permitted_to? :remove_database, :database_clusters do %>
+     <td>
+    <% form_remote_tag(:html => {:id=>"remove_database_#{db.id}",
+         :action => { :action => "remove_database", :id => database_cluster.id}},
+         :url => url_for({ :action => "remove_database", :id => database_cluster.id}), 
+         :update => 'database_name_list') do  %>
+      <%= hidden_field_tag( "database_name", db.id) %>
+      <%= submit_tag "Remove" %>
+    <% end %>
+  </td>
+  <% end -%>
+</tr>
+<% end -%>
+</table>
+
+<% permitted_to? :add_database, :database_clusters do %>
+<p>
+  <% form_tag( url_for({ :action => "add_database", :id => database_cluster.id}), :method => 'post',
+         :id=>"add_database_to_cluster", 
+         :onsubmit => "return remote_form_tag('database_name_list', this);") do  %>
+    <div id="database_name_database_name_id_too" name="database_name[database_name_id_too]"></div>
+    <%= collection_select(:database_name, :database_name_id, DatabaseName.find(:all, :conditions =>["description <> 'Postgres built-in'"], :order => :name), :database_name_id, :to_label) %>
+    <%= submit_tag "Add" %>
+  <% end %>
+  </p>
+<%end %>
+
+</div>
+

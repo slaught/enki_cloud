@@ -1,0 +1,244 @@
+#!/usr/bin/env ruby 
+
+# == Synopsis 
+#   This is a sample description of the application.
+#   Blah blah blah.
+#
+# == Examples
+#   This command does blah blah blah.
+#     3par_mgmt -mode add_volume --comment 'Adding for new slave' --
+#
+#   Other examples:
+#     3par_mgmt -q bar.doc
+#     3par_mgmt --verbose foo.html
+#
+# == Usage 
+#   3par_mgmt [options] --mode (mode)
+#
+#   For help use: 3par_mgmt -h
+#
+# == Options
+#   -h, --help          Displays help message
+#   -v, --version       Display the version, then exit
+#   -q, --quiet         Output as little as possible, overrides verbose
+#   -V, --verbose       Verbose output
+#   TODO - add additional options
+#
+# == Author
+#   Enova Financial
+#
+# == Copyright
+#   Copyright (c) 2010 Enova Financial. Licensed under the MIT License:
+#   http://www.opensource.org/licenses/mit-license
+#
+# == Credits
+# http://blog.infinitered.com/entries/show/5
+
+require 'pathname'
+require 'yaml'
+
+# when in a bin or script dir
+$:.unshift(Pathname.new($0).realpath.dirname.join('../lib').realpath)
+$:.unshift(Pathname.new($0).realpath.dirname.join('..').realpath)
+$:.unshift(Pathname.new($0).realpath.dirname.join('../vendor/gems').realpath)
+$:.unshift(Pathname.new($0).realpath.dirname.realpath)
+
+require 'Getopt/Declare'
+require 'rubygems'
+require 'net/ssh'
+require 'cnu'
+require 'cnu/gozer'
+require 'cnu/gozer/san_cmd_runner'
+require 'cnu/isimud'
+require 'cnu/isimud/ssh'
+require 'cnu/enki'
+require 'cnu/enki/config_layout'
+require 'cnu/enki/iscsi'
+
+CONFIG = Pathname.new($0).realpath.join("../../config/").realpath + "three_par.yml"
+
+begin
+ ThreeParConfig.defined?
+rescue
+ ThreeParConfig = YAML::load_file(CONFIG)
+end
+
+# This is the base class for interacting with the 3par san
+class ThreeParManager
+  attr_reader :options
+
+  VERSION = '0.0.1'
+
+  SPEC = <<EOF
+		help				Display help info
+		version				Display version
+		quiet				Run non-verbosely
+		verbose				Run verbosely
+		comment <comment>				Set the comment field
+		domain <domain>				Set the domain field
+		lun <lun>				Set lun
+		os <os>				Set the operating system
+		mode <mode>				Set plugin module
+		usr_cpg <ucpg>				Set the user CPG
+		snp_cpg <spcg>				Set the snapshot CPG
+		hostname <hostname>				Set the hostname
+		volname <name>				Set the volume name
+		volsize <size>				Set the volume size
+		location <loc>				Set the location
+		ip <ipaddr>				Set the ip_addr
+		snapname <name>				 Set the snapshot name
+		--				indicates end of arguments
+									{ finish }
+EOF
+
+  # Someone gave us a location not defined in yml
+  class BadLocation < Exception; end
+  # Someone gave us a bad mode to work in
+  class BadMode < Exception; end
+
+  def initialize(arguments, stdin)
+    # Set defaults
+    @arguments = arguments
+    @stdin = stdin
+
+    # TODO - add additional defaults
+  end
+
+  # Parse options, check arguments, then process the command
+  def run
+
+    if parsed_options? && arguments_valid? 
+
+      puts "Start at #{DateTime.now}\n\n" if @options['verbose']
+
+      output_options if @options['verbose'] # [Optional]
+
+      process_arguments            
+      process_command
+
+      puts "\nFinished at #{DateTime.now}" if @options['verbose']
+
+    else
+      output_usage
+    end
+
+  end
+
+  protected
+
+    def parsed_options?
+      # Specify options
+      @options=Getopt::Declare.new(SPEC)
+      puts @options.inspect
+      process_options
+      true      
+    end
+
+    def process_options
+      # Performs post-parse processing on options
+    end
+
+    def output_options
+      puts "Options:\n"
+
+      @options.marshal_dump.each do |name, val|        
+        puts "  #{name} = #{val}"
+      end
+    end
+
+    def arguments_valid?
+      # TODO - implement your real logic here
+      true unless @options['mode'].nil?
+    end
+
+    # Setup the arguments
+    def process_arguments
+      unless @options['location'].nil? ||
+             ThreeParConfig['locations'].include?(@options['location'])
+        raise BadLocation
+      end
+      @options['mode'] = @options['mode'].to_sym
+    end
+
+    def output_help
+      output_version
+      RDoc::usage() #exits app
+    end
+
+    def output_usage
+      puts <<-EOF
+
+    CNU 3Par Management Interface
+
+    Examples:
+      Snapshots:
+        3par_mgmt mode create_ro_snapshot comment 'This is my Comment' snapname 'SnapNameToBe' volname 'VolumeToSnap'
+        3par_mgmt mode create_rw_snapshot comment 'This is my Comment' snapname 'SnapNameToBe' volname 'VolumeToSnap'
+
+      Volume Management:
+        3par_mgmt mode add_volume snp_cpg SnapShotCPGName usr_cpg UserCPGName volname VolumeName volsize VolumeSizeInMB
+        3par_mgmt mode remove_volume volname VolumeName
+        3par_mgmt mode export_volume hostname 'HostToExportTo' lun 0 volname 'VolumeToExport'
+        3par_mgmt mode unexport_volume hostname 'HostToRemoveFrom' lun 0 volname 'VolumeToUnexport'
+
+      Host Management:
+        3par_mgmt mode add_host domain Enova hostname largesan00.abc os "Debian Squeeze" location 'abc' ip '127.30.0.0'
+
+EOF
+    end
+
+    def output_version
+      puts "#{File.basename(__FILE__)} version #{VERSION}"
+    end
+
+    def process_command
+      # TODO: Refactor the MissingArgument checks into the validate args method
+      # by utilizing the same ideas in
+      args = case @options['mode']
+        when :add_host then
+          {:domain => @options['domain'],
+          :hostname => @options['hostname'],
+          :os => @options['os'],
+          :loc => @options['location'],
+          :ip => @options['ip']}
+        when :add_volume then
+          {:snp => @options['snp_cpg'],
+          :usr => @options['usr_cpg'],
+          :name => @options['volname'],
+          :size => @options['volsize']}
+        when :remove_volume then
+          {:volname => @options['volname']}
+        when :export_volume, :unexport_volume then
+          {:volname => @options['volname'],
+          :lun => @options['lun'],
+          :hostname => @options['hostname']}
+        when :create_rw_snapshot, :create_ro_snapshot then
+          {:comment => @options['comment'],
+          :snapname => @options['snapname'],
+          :volname => @options['volname']}
+        else
+          raise BadMode
+      end
+      ::CNU::Gozer::SanTypes::ThreePar.run(@options['mode'], args)
+      #process_standard_input # [Optional]
+    end
+
+    def process_standard_input
+      input = @stdin.read      
+      # TODO - process input
+
+      # [Optional]
+      #@stdin.each do |line| 
+      #  # TODO - process each line
+      #end
+    end
+end
+
+
+# TODO - Add your Modules, Classes, etc
+
+
+# Create and run the application
+app = ThreeParManager.new(ARGV, STDIN)
+app.run
+

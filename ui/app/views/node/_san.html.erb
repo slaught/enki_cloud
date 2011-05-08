@@ -1,0 +1,17 @@
+<% unless  @node.san_nics.empty? then %>
+<div id="node_sans" class="node_data">
+<h2>San</h2>
+<table class="sans">
+  <tr>
+    <th>Name</th>
+    <th>Node IP Address</th>
+  </tr>
+  <% @node.san_nodes.each do |sn| %>
+  <tr>
+    <td><%= link_to sn.san.san_name, :action => "show", :controller=>"san", :id=> sn.san_id %></td>
+    <td><%= sn.ip_address %></td>
+  </tr>
+  <% end %>
+</table>
+</div>
+<% end %>

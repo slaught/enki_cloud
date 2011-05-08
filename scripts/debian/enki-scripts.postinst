@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if [ -x "/etc/init.d/enki-firewall" ]; then
+	update-rc.d enki-firewall start 42 S . >/dev/null || exit $?
+	/etc/init.d/enki-firewall || exit 0
+fi

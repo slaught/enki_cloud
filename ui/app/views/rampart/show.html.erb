@@ -1,0 +1,21 @@
+<% set_html_title @rampart.node.to_label, "Ramparts" %>
+<h1>Viewing Rampart for <%= @rampart.node.to_label %>&nbsp;<%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"), {:action => "edit", :id => @rampart.id}, {:title => "Edit"} if permitted_to? :edit, :rampart %></h1>
+<dl>
+  <dt>Node</dt>
+  <dd><%= link_to_node @rampart.node %></dd>
+  <dt>Pulic IP?</dt>
+  <dd><%= @rampart.has_public_ip.to_s.capitalize %></dd>
+  <dt>Service IP?</dt>
+  <dd><%= @rampart.has_service_ip.to_s.capitalize %></dd>
+  <dt>Home Network</dt>
+  <dd><%= @rampart.home_network %></dd>
+  <dt>Locale IP</dt>
+  <dd><%= @rampart.locale_ip_address || '-' %></dd>
+  <dt>Network IP</dt>
+  <dd><%= @rampart.network_ip %></dd>
+  <dt>Public IP</dt>
+  <dd><%= @rampart.public_ip_address || '-' %></dd>
+</dl>
+<br />
+<%= render :partial => "rampart_service", :locals => { :rampart => @rampart } %>
+<%= link_to "Back", {:action => "list"} %>

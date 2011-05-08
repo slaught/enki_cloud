@@ -1,0 +1,38 @@
+[
+{
+  "cluster_id": "c86",
+  "fw_mark" : "2130714113",
+  "link" : "http://somewhere.example.com/cluster/show/86",
+  "description" : "Web Frontend",
+  "cluster_name" : "web_frontend",
+  "services" : 
+  	[
+		{
+		  "ha_hostname" : "www.example.com",
+		  "url" : "http://www.example.com",
+		},
+		{
+		  "ha_hostname" : "www.example.com",
+		  "url" : "http://www.example.com",
+		}
+	],
+  "nodes" : 
+  	[
+	  	{
+	  		"datacenter_name": "abc",
+	  		"ip_address" : "10.10.30.101.0",
+	  		"mgmt_ip_address" : "http://172.16.0.195",
+	  		"link" : "http://somewhere.example.com/node/show/124",
+	  		"name" : "jv01.abc"
+	  	},
+	  	{
+	  		"datacenter_name": "efg",
+	  		"ip_address" : "10.10.30.101.0",
+	  		"mgmt_ip_address" : "http://172.16.16.177",
+	  		"link" : "http://somewhere.example.com/node/show/2672",
+	  		"name" : "jv01.efg"
+	  	}
+  
+  ]
+}
+]

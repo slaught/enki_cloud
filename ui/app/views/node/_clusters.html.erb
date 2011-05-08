@@ -1,0 +1,46 @@
+<div id="cluster_nodes" class="node_data">
+<h2>Clusters</h2>
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Node IP Address</th>
+    <th>Services</th>
+  </tr>
+<% for cluster in @node.clusters %>
+  <tr>
+    <td><%= link_to_cluster(cluster) %></td>
+    <td><%= cluster.ip_address %></td>
+    <td>
+<% if cluster.cluster_name !~ /mgmt/ then -%>
+<% cluster.services.each do |s|  -%>
+       <a target="_blank" href="<%= s.ha_protocol %>://<%= ip(@node.mgmt_ip_address)%>:<%= s.localport %>"><%= s.name %></a>
+<% end -%>
+<% end -%>
+    </td>
+  <% permitted_to? :remove_node, :cluster do %>
+    <td class="td_extra">
+      <% form_remote_tag(:html => {:id=>"del_node_from_cluster",
+        :action => { :action => "del_node_from_cluster", :id => @node.id}},
+        :url => url_for({ :action => "del_node_from_cluster",:id => @node.id}),
+        :update => 'cluster_nodes') do %>
+    <%= hidden_field_tag  :cluster_id, cluster.id %>
+    <%= image_submit_tag "/images/silk/delete.png", { :confirm => "Are you sure you want to remove '#{@node.fn_prefix}' from the cluster?", :title => "Remove"} %>
+  <% end %> 
+    </td>
+  <% end %>
+  </tr>
+<% end %>
+</table>
+<% permitted_to? :add_node, :cluster do %>
+<br/>
+<div>
+  <% form_remote_tag(:html => {:id=>"add_node_to_cluster",
+        :action => { :action => "add_node_to_cluster", :id => @node.id}},
+        :url => url_for({ :action => "add_node_to_cluster",:id => @node.id}),
+        :update => 'cluster_nodes') do %>
+    <%= collection_select(:cluster, :cluster_id, Cluster.find_all_active(true), :cluster_id, :to_label) %>
+    <%= submit_tag "Add To Cluster" %>
+  <% end %>
+</div>
+<% end %>
+</div>

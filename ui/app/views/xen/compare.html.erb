@@ -1,0 +1,26 @@
+<h1>Xen Mappings</h1>
+<% @nodes.each do |k,v| %>
+  <h2><%= k %><a href="#" onclick='Effect.toggle("<%= k %>_xen_mappings", "blind", {duration:0.5});; return false;' style="text-decoration: none;" class="test">+</a></h2>
+  <div id="<%= k %>_xen_mappings" style="display: none;">
+  <% v.each do |domo, guests| %>
+    <%= render :partial => "xen_host_map", :locals => { :domo => domo, :guests => guests } %>
+  <% end %>
+  </div>
+<% end %>
+
+
+<style> 
+table.xen_compare { height: 100%; }
+  table .xen_compare tr,td { background-color: #ddd; }
+.host { background-color: #bbf; height: 100%; }
+.outer { padding: 5px; }
+.hidden { padding: 0; border: none; }
+.overloaded { background-color: #f55 }
+.xen_compare_error { background-color: #f55; color: white; }
+  .xen_compare_error a { color: white;  }
+.xen_compare_warning { color: #e70; background-color: #fb0; }
+.ok { background-color: #5f5 }
+.kindafull { background-color: #fb0 }
+div.percent-bar { margin: 0;height:100%; padding:3px 0 0 5px; }
+td.percent-bar { padding: 0;}
+</style> 

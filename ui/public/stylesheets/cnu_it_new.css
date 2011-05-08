@@ -1,0 +1,260 @@
+* {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #e6eae9;
+  font: 75% "Lucida Sans Unicode", "Bitstream Vera Sans", "Trebuchet Unicode MS", "Lucida Grande", Verdana, Helvetica, sans-serif;
+}
+
+ul {
+  list-style-type: none;
+}
+
+a:link, a:hover, a:visited, a:active {
+  color: #c75f3e;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a img {
+  border: 0;
+}
+
+dl {}
+dt {
+  font-weight: bold;
+  margin: 5px 0 5px 0;
+}
+dd {
+  margin: 0 0 0 10px;
+}
+
+ul.horiz_nav li {
+  display: inline;
+  margin: 0 5px 0 0;
+}
+
+hr.clear {
+  clear: both;
+  border: 0;
+}
+
+.red {
+  color: #A60000;
+}
+.green {
+  color: #008500;
+}
+
+fieldset {
+  display: inline-block;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #C1DAD7;
+}
+
+.note {
+  font-style: italic;
+  color: #4f6b72;
+}
+
+/* FLASH MESSAGES */
+
+div.flash {
+  padding: 15px;
+  margin: 0 0 15px 0;
+  font-size: 110%;
+  font-weight: bold;
+}
+
+div.flash_notice {
+  border: 1px dashed #008500;
+  background-color: #78F778;
+  color: #008500;
+}
+
+div.flash_warning, div.system_warning {
+  border: 1px dashed #A64B00;
+  background-color: #FFB273;
+  color: #A64B00;
+}
+
+div.flash_error {
+  border: 1px dashed #A60000;
+  background-color: #FF7373;
+  color: #A60000;
+}
+
+p.flash_notice {
+  color: #008500;
+}
+
+p.flash_warning {
+  color: #A64B00;
+}
+
+p.flash_error {
+  color: #A60000;
+}
+
+/* STANDARD TABLES */
+
+table { margin: 0; padding: 0; border-left: 1px solid #C1DAD7; background: #fff; border-collapse: collapse; }
+
+th {
+  font: bold 11px "Trebuchet MS", Verdana, Arial, Helvetica, sans-serif;
+  color: #4f6b72;
+  border-right: 1px solid #C1DAD7;
+  border-bottom: 1px solid #C1DAD7;
+  border-top: 1px solid #C1DAD7;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 3px 3px 3px 6px;
+  background: #CAE8EA url(/images/table_bg_header.jpg) no-repeat;
+}
+
+th.nobg {
+  border-top: 0;
+  border-left: 0;
+  border-right: 1px solid #C1DAD7;
+  background: none;
+}
+
+td {
+  border-right: 1px solid #C1DAD7;
+  border-bottom: 1px solid #C1DAD7;
+  /*background: #fff;*/
+  padding: 3px 3px 3px 6px;
+  color: #4f6b72;
+}
+
+td.td_extra {
+  border: 0;
+}
+
+td.alt {
+/*  background: #F5FAFA;*/
+  color: #797268;
+}
+
+th.spec {
+  border-left: 1px solid #C1DAD7;
+  border-top: 0;
+  background: #fff url(images/table/bullet1.gif) no-repeat;
+  font: bold 10px "Trebuchet MS", Verdana, Arial, Helvetica, sans-serif;
+}
+
+th.specalt {
+  border-left: 1px solid #C1DAD7;
+  border-top: 0;
+  background: #f5fafa url(images/table/bullet2.gif) no-repeat;
+  font: bold 10px "Trebuchet MS", Verdana, Arial, Helvetica, sans-serif;
+  color: #797268;
+}
+
+tr:hover { background: #d2ebe8; }
+
+table.sub_table, table.sub_table tr, table.sub_table td {
+  border: 0;
+}
+
+table.form_table {
+  border: 0;  
+}
+
+table.form_table td {
+  border: 0;  
+}
+
+table.form_table tr:hover {
+  background: transparent;
+}
+
+/* FORMS */
+
+form.new_form input, form.new_form .display_field {
+  display: block;
+  margin: 0 0 5px 0;
+}
+
+form.new_form select {
+  display: block;
+  margin: 0 0 5px 0;
+}
+
+form.new_form input.left_side, .left_side {
+  float: left;
+  margin-right: 5px;  
+}
+
+/*  HEADER/USERBAR */
+
+#header {
+ margin: 5px;
+}
+
+h1#app_title {
+  height: 40px;
+  background: url("/images/valuecard_big.png") no-repeat;
+  padding: 10px 0 0 55px;
+}
+
+#app_title a:link, #app_title a:hover, #app_title a:visited, #app_title a:active {
+  color: #000;
+  text-decoration: none;
+}
+
+ul#userbar {
+ float: right; 
+}
+
+ul#userbar li {
+  display: inline;
+  padding: 0 5px 0 0;
+}
+
+/* FOOTER */
+#footer {
+  border-top: 1px dotted #888;
+  padding: 15px;  
+}
+#footer ul { }
+#footer ul li {
+  display: inline;
+  margin: 0 5px 0 0;
+}
+
+/* APP CONTENT */
+
+#app_content {
+  background-color: #fff;
+  padding: 15px;
+}
+
+/* NODESSS */
+
+div.node_live_data {
+  border: 1px dotted #888;
+  background-color: #eee;
+  padding: 5px;
+  width: auto;
+  float: right;
+}
+
+div.node_live_data ul li {
+  margin: 0 0 0 20px;
+  list-style-type: disc;  
+}
+
+/* NODE PARTIALS */
+
+div.node_data {
+  margin: 10px 0;
+}
+

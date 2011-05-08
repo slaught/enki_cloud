@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# Michael Vallaly Sept '09
+
+# This script is the compliment to the push-itcfg script. It allows remote root ssh tunneled rsyncs via public-key solely for CNU IT CFG deployment.
+
+BASECONFIG_DIR="/etc/cnu/configs/base_config"
+
+# ADD the following to authorized_keys 
+#<snip>
+## CNU IT DEPLOY KEY ##
+#command="/root/cnu/scripts/validate-itcfg-push",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-rsa sshkeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA == deployme@example.com
+#</snip>
+###############################################################################
+
+case "$SSH_ORIGINAL_COMMAND" in
+  *\&*)
+  echo "Rejected"
+  ;;
+  *\(*)
+  echo "Rejected"
+  ;;
+  *\{*)
+  echo "Rejected"
+  ;;
+  *\;*)
+  echo "Rejected"
+  ;;
+  *\<*)
+  echo "Rejected"
+  ;;
+  *\`*)
+  echo "Rejected"
+  ;;
+  rsync\ --server*.\ ${BASECONFIG_DIR})
+  $SSH_ORIGINAL_COMMAND
+  ;;
+  *)
+  echo "Rejected"
+  ;;
+esac 

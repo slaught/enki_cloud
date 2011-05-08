@@ -1,0 +1,12 @@
+<tr class="downpage <%= datacenter %>_row" id="<%= id %>">
+	<td class="status s node-downpage" colspan="2">down page</td>
+	<td class="n"></td>
+    <td class="cnt w" colspan="2"><%= s ? s[1] : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[2] ) : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[3] ) : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[2] + s[3] ) : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[9] ) : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[10] ) : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[7], true )  : "" %></td>
+    <td class="cnt w"><%= s ? formatValue( s[4], true ) : "" %></td>
+</tr>

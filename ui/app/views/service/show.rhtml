@@ -1,0 +1,37 @@
+<% set_html_title @service.to_label, "Services" %>
+<h1><%= @service.name%></h1>
+<em><%= @service.description %></em>
+<dl>
+<dt>Name </dt> <dd><%= @service.name%></dd>
+<dt>IP Address</dt><dd><%= @service.ha_ip_address %></dd>
+<dt>HA Port/Proto</dt><dd><%= @service.ha_port %>/<%= @service.ha_proto%></dd>
+<dt>URL</dt><dd><%= @service.url  %></dd>
+<dt>URI Schema</dt><dd><%= @service.ha_protocol unless @service.url.nil? %></dd>
+<dt>HA Hostname </dt><dd><%= @service.ha_hostname unless @service.url.nil? %></dd>
+<dt>Local Port</dt><dd><%= @service.localport %></dd>
+<dt>Availability</dt><dd><%= @service.availability%></dd>
+</dl>
+
+<h2>Clusters</h2>
+<ul>
+<% for cluster in @service.clusters %>
+<li><%= link_to cluster.cluster_name, :action => "show", :controller => 'cluster', :id => cluster %></li>
+<% end %>
+</ul>
+
+<h2>Depends On</h2>
+<div id="add_dependency">
+  <%= link_to_remote "Add a dependency", :update => "add_dependency", :url => { :action => "add_dependency_form", :id => @service} if permitted_to? :add_dependency, :service %>
+</div>
+<ul>
+<% for service in @service.depends_on_relationships %>
+<li><%= link_to service.child.to_label, :action => "show", :id => service.child %><% if permitted_to? :add_dependency, :service %> (<%= link_to "Remove", :action => "del_dependency", :id => service %>)<% end %></li>
+<% end %>
+</ul>
+
+<br/>
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", :action => "edit", :id => @service.id if permitted_to? :edit, :service %></li>
+  <li><%= link_to "All Serivces", :action => "list" %></li>
+</ul>
+

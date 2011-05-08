@@ -1,0 +1,47 @@
+<div id="node_serial_consoles" class="node_data">
+<h2>Serial Console</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table class="serial_console">
+<tr>
+  <th>Serial Console</th>
+  <th>Port</th>
+</tr>
+<% for p in node.serial_consoles %>
+<tr><td><%= link_to_node p.scs %></td><td><%= p.port %></td>
+  <% permitted_to? :unplug_serial_console, :node do %>
+  <td class="td_extra">
+  <% form_remote_tag(:html => {:id=>"remove_serial_console_#{p.id}",
+         :action => { :action => "unplug_serial_console", :id => node.id}},
+         :url => url_for({ :action => "unplug_serial_console", :id => node.id}), 
+         :update => 'node_serial_consoles') do  %>
+    <%= hidden_field_tag( "serial_consoles_id", p.id ) %>
+  <%= image_submit_tag "silk/delete.png", :title => "Unplug" %>
+  <% end %>
+  </td>
+  <% end %>
+</tr>
+<% end %>
+
+</table>
+
+<% if node.node_type.can_has_serial_console? and (node.serial_consoles.empty? or (node.node_type.is_san? and node.serial_consoles.length < 2))%>
+<% permitted_to? :plug_serial_console , :node do %>
+<div>
+  <% form_remote_tag(:html => {:id=>"add_serial_console_node",
+         :action => { :action => "plug_serial_console", :id => node.id}},
+         :url => url_for({ :action => "plug_serial_console", :id => node.id}), 
+         :update => 'node_serial_consoles') do   %>
+<table>
+<tr><td>
+ <%= collection_select(:serial_console, :scs_id, Node.find_all_serial_consoles(node.datacenter), :node_id, :to_label) %>
+</td>
+<td><%= text_field_tag "serial_console[port]" %></td> 
+<td><%= submit_tag "Plug" %></td>
+  </tr>
+</table>
+
+  <% end %>
+  </div>
+<%end %>
+<% end %>
+</div>

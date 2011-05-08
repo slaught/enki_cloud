@@ -1,0 +1,23 @@
+cat > js <EOF
+#!/bin/sh
+CP=funcunit/dist/selenium/selenium/selenium-java-client-driver.jar:steal/rhino/js.jar
+java -Xss1024k -cp $CP org.mozilla.javascript.tools.shell.Main -opt -1 -e 'load('"'"$1"'"')'
+EOF 
+
+sh ./js command/scripts/compress.js
+
+cat .gitmodules 
+[submodule "steal"]
+        path = steal
+        url = git://github.com/jupiterjs/steal.git
+[submodule "jquery"]
+        path = jquery
+        url = git://github.com/jupiterjs/jquerymx.git
+[submodule "funcunit"]
+        path = funcunit
+        url = git://github.com/jupiterjs/funcunit.git
+[submodule "mxui"]
+        path = mxui
+        url = git://github.com/jupiterjs/mxui.git
+
+

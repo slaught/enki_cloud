@@ -1,0 +1,24 @@
+<% set_html_title "Create New Os Version" %>
+<h1>New Os Version</h1>
+
+<% form_for(:osversion, @osversion, :url => { :action => 'create'}) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.label :distribution %><br/>
+    <%= collection_select(:osversion, :distribution, Distribution.find(:all), "name", "name") %>
+  </p>
+  <p>
+    <%= f.label :kernel %><br/>
+    <%= f.text_field :kernel %>
+  </p>
+  <p>
+    <%= f.label :description %><br/>
+    <%= f.text_field :description %>
+  </p>
+  <p>
+    <%= f.submit "Create" %>
+  </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

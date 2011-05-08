@@ -1,0 +1,191 @@
+#!/bin/bash
+#
+# Michael Vallaly (Aug 08)
+#
+# Description:
+#
+# This plugin checks the health of multipath using SAN IQNs
+#
+# Usage: ./check_san_multipath -C(acti) or -N(agios) 
+
+#
+# If we don't run as root add this line to /etc/sudoers :
+# -------------------------------------------------------
+# nagios      ALL=NOPASSWD: '/sbin/multipath -lld'
+#
+#
+# Examples:
+
+DM_BASE="/dev/mapper"
+MULTIPATH_BIN="/sbin/multipath"
+
+#########################################################################################
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+# Check that the multipath utility exits
+if [ ! -x $MULTIPATH_BIN ]; then
+	echo "Multipath tools ($MULTIPATH_BIN) not found!"
+	exit $STATE_UNKNOWN
+fi
+
+# Print our usage line
+usage="Usage: ./$0 -C(acti) or -N(agios) -p -q\n\n
+\t-N  Nagios Check Output\n
+\t-C  Cacti Graph Output\n
+\t-p  Check Paths\n
+\t-q  Check Queue on Failed Path\n\n"
+
+# Check our parameters and set the service_type/check_type
+while getopts "CNpq" options; do
+  case $options in
+    C ) service_type="cacti";;
+    N ) service_type="nagios";;
+    p ) check_type="path";;
+    q ) check_type="queue";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check our passed parameters
+if [ "$service_type" == "" -o "$check_type" == "" ]; then
+  echo -e $usage
+  exit $STATE_UNKNOWN
+fi 
+
+### Globals
+
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+# Check of the kernel even supports device mapper
+if [ ! -d "$DM_BASE" ]; then
+  echo "Kernel Device Mapper support not found.. Exiting!"
+  exit $STATE_UNKNOWN
+fi
+
+# Generate the list of device mapper devices to scan
+DM_DEVICES=`ls -1 $DM_BASE |grep -v -e '-part' -e 'control'`
+
+# Set some counters
+
+NAGIOS_OUTPUT=""
+PATH_FAILED=0
+PATH_INVALID=0
+QINP_FAILED=0
+MULTIPATHS=0
+
+# Loop through our device maps
+for device in $DM_DEVICES; do 
+
+  # Check the status of the multipather
+  cli_output=`sudo $MULTIPATH_BIN -lld $device`
+
+  # Grab some counts
+  failed=`echo $cli_output |grep -ce "\[failed\]\[faulty\]"`
+  invalid=`echo $cli_output |grep -ce "#:#"`
+
+  # Nagios checks
+  if [ "$service_type" == "nagios" ]; then
+  
+    # Get additional IQN info
+    dm_device=`echo $cli_output |grep $device |cut -d " " -f3 |tr -d '['`
+    iqn=`ls -l /dev/iscsi-targets/ |grep "$dm_device" |cut -d " " -f8 |cut -d- -f6-`
+
+    if [ "$check_type" == "queue" ]; then
+      # Check the path queuing
+      if [ "$(echo $cli_output |grep -e '\[features=' |grep -ce 'queue_if_no_path')" -ne 1 ]; then
+        NAGIOS_OUTPUT="Failed Path Queuing is disabled for '$iqn'! $NAGIOS_OUTPUT"
+        let CRIT_COUNT+=1
+      fi
+    
+    else
+
+      # Check for invalid paths
+      if [ "$invalid" -gt "0" ]; then
+        if [ "$invalid" -gt "1" ]; then
+	  noun="paths"
+	else 
+	  noun="path"
+	fi
+        NAGIOS_OUTPUT="Target '$iqn' has $invalid invalid $noun! $NAGIOS_OUTPUT"
+        let CRIT_COUNT+=1
+        continue
+      fi
+
+      # If we aren't invalid check if we are failed
+      if [ "$failed" -gt "0" ]; then
+        if [ "$failed" -gt "1" ]; then
+          noun="paths"
+        else 
+          noun="path"
+        fi
+        NAGIOS_OUTPUT="Target '$iqn' has $failed failed $noun.. $NAGIOS_OUTPUT"
+        let WARN_COUNT+=1
+      fi
+
+    fi
+
+  else
+    
+    # We care only about cacti output
+
+    # Get a count of our paths
+    let MULTIPATHS+=$(echo "$cli_output" |grep -ce "\[[[:alpha:]]*\]\[[[:alpha:]]*\]") 
+
+    # Grab the queue if no path failures
+    if [ "$(echo $cli_output |grep -e '\[features=' |grep -ce 'queue_if_no_path')" -ne 1 ]; then
+      let QINP_FAILED+=1
+    fi
+
+    # Get the invalid path count
+    if [ "$invalid" -gt "0" ]; then
+      let PATH_INVALID+=$invalid
+      continue
+    fi
+    
+    # Get failed path count
+    let PATH_FAILED+=$failed
+
+  fi
+
+done
+
+if [ "$service_type" == "nagios" ]; then
+
+  # Generate the proper exit status for nagios
+  if [ "$CRIT_COUNT" -ne 0 ]; then
+     EXIT_STATUS=$STATE_CRITICAL
+  elif [ "$WARN_COUNT" -ne 0 ]; then
+     EXIT_STATUS=$STATE_WARNING
+  elif [ "$UNK_COUNT" -ne 0 ]; then
+     EXIT_STATUS=$STATE_UNKOWN
+  else
+     EXIT_STATUS=$STATE_OK
+  fi
+
+  # Output good status
+  if [ "$NAGIOS_OUTPUT" == "" -a "$check_type" == "queue" ]; then
+     NAGIOS_OUTPUT="All paths configured to queue IO."
+  elif [ "$NAGIOS_OUTPUT" == "" -a "$check_type" == "path" ]; then
+     NAGIOS_OUTPUT="All paths are active and ready."
+  fi
+
+  # Print out status and exit
+  echo -n "$NAGIOS_OUTPUT"
+  exit $EXIT_STATUS
+
+else
+
+  # Output our cacti metrics
+  echo "num_of_paths:$MULTIPATHS failed_paths:$PATH_FAILED invalid_paths:$PATH_INVALID mpath_io_queue_disabled:$QINP_FAILED"
+  exit 0
+
+fi

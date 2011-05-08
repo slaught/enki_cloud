@@ -1,0 +1,27 @@
+<h1>Activity</h1>
+<div style="float: right;" id="chart"></div>
+<script><%= @sparksline %></script>
+<div style="float: right;">
+<h3>Top Ten Users</h3>
+<table class="sortable">
+<tr><th>who</th><th>changes</th></tr>
+<% for u in @top_ten_users -%>
+<tr><td><%= u["name"] %></td><td><%= u["count"] %></td></tr>
+<% end -%>
+</table>
+</div>
+<h3>Latest Changes</h3>
+<div class="latest">
+<% for ver in @versions -%>
+<div class="version">
+<p>At <%= time_ago_in_words(ver.when) %> ago, <%= ver.what %> was <%= ver.how %> by <%= ver.who  %> </p>
+</div>
+<% end -%>
+</div>
+<div class="older">
+<% for ver in @old_versions -%>
+<div class="version">
+<p>At <%= time_ago_in_words(ver.when) %> ago, <%= ver.what %> was <%= ver.how %> by <%= ver.who  %> </p>
+</div>
+<% end -%>
+</div>

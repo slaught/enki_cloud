@@ -1,0 +1,10 @@
+<ul id="userbar" class="rightnav">
+<% if logged_in? %>
+  <li id="user-bar-greeting">Logged in as <strong><%= link_to_current_user :content_method => :login %></strong></li >
+  <li id="user-bar-action"><%= link_to "Log out", logout_path, { :title => "Log out" } %></li >
+<% else %>
+  <li id="user-bar-greeting"><%= link_to_login_with_IP 'Not logged in', :style => 'border: none;' %></li >
+  <li id="user-bar-action"><%= link_to "Log in",  login_path,  { :title => "Log in" } %> </li>
+<% end %>
+</ul>
+

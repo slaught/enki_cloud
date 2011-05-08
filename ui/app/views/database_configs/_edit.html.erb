@@ -1,0 +1,20 @@
+
+<%= f.error_messages %>
+<style>fieldset { border: none; }</style>
+<%
+# <div style="display: none" >
+# port  | integer | 
+# </div>
+%>
+<%= layout_edit_element('Config Name', f.text_field(:name) ) %> 
+<%= layout_edit_element('Max Connections', f.text_field(:max_connections ) ) %> 
+
+<%= layout_edit_element('Shared Buffers', f.text_field(:shared_buffers) ) %> 
+<%= layout_edit_element('Work Memory', f.text_field(:work_mem) ) %> 
+<%= layout_edit_element('Maintenance Memory', f.text_field(:maintenance_mem) ) %> 
+<%= layout_edit_element('Search Path', f.text_field(:search_path) ) %> 
+<%= layout_edit_element('Temp Buffers', f.text_field(:temp_buffers) ) %> 
+<%= layout_edit_element('timezone', f.text_field(:timezone) ) %> 
+<%= layout_edit_element('log_min_duration_statement', f.text_field(:log_min_duration_statement) ) %> 
+<%= layout_edit_element('effective_cache_size', f.text_field(:effective_cache_size) ) %> 
+<%= layout_edit_element('Disk Size', f.text_field(:disk_size) ) %> 

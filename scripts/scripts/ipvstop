@@ -1,0 +1,173 @@
+#!/bin/bash
+
+## IPVS Monitoring Script 2.0
+## Michael Vallaly 2008
+
+REFRESH="2"
+CIBADMIN_BIN="/usr/sbin/cibadmin"
+IPVSADM_BIN="/sbin/ipvsadm"
+SED_BIN="/bin/sed"
+
+############################################################################################
+
+usage="USAGE: $0 [-f filter] -c[onnections] -r[ates] or -s[tats] -h[ighlight changes] -1(one shot) ... "
+
+while getopts "1cdf:hrs=:" options; do
+  case $options in
+      1 ) ONE_SHOT="1";;
+      c ) CHECK_TYPE="--connection";;
+      d ) RESOLVE_DNS="1";;
+      f ) filter+=" $OPTARG";;
+      h ) watch_arg="-d";;
+      r ) CHECK_TYPE="--rate";;
+      s ) CHECK_TYPE="--stats";;
+      = ) watch_eabled=1;;
+     \? ) echo $usage
+          exit 1;;
+      * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check if we are running as root.
+if [ "$UID" -ne "0" ]; then 
+  echo "Superuser persmissions required to monitor kernel LVS"
+  exec sudo $0 $@
+fi
+
+# Print a little warning if we aren't filtering 
+#  (user could get output larger than their screen)
+if [ "$filter" == "" -a "$ONE_SHOT" != "1" ]; then
+  if  [ "${!#}" != "$HOSTNAME" ]; then
+    echo "*** Warning ***"
+    echo "  Unfiltered output, contents may be larger than your screen.."
+    echo "  Continuting in 2 seconds."
+    sleep 2
+    clear
+  fi
+fi
+
+# Cluster Name to FWmark mapping via CIB 
+if [ "${!#}" != "$HOSTNAME" -a "$CHECK_TYPE" != "--connection" ]; then
+  OLDIFS=$IFS
+  IFS=$'\n'
+
+  # Export our heartbeat resource pairs
+  export HB_RESOURCES="$($CIBADMIN_BIN -Q -o resources |grep -o 'description="[^"]\+"' |awk -F'"' '{print $2}'|awk -F' - ' '{print $1}')"
+
+  # Break apart our CIB resources
+  for desc_pair in $HB_RESOURCES; do
+
+    fwmark=`echo $desc_pair |cut -d: -f1`
+    desc=`echo $desc_pair |cut -d: -f2 |cut -d- -f1`
+    SED_LINE+="-e \"s/;  $fwmark/\n; ; ; ; ; ;\n;$desc($fwmark)/g\" "
+
+  done
+
+  # Export the SED line
+  if [ "$SED_LINE" != "" ]; then
+    export SED_LINE="sed ${SED_LINE}"
+  else
+    export SED_LINE="cat"
+  fi
+
+  # Reset the IFS
+  IFS=$OLDIFS
+fi
+
+# Enable DNS resolving
+if [ "$RESOLVE_DNS" == "1" ]; then
+  dns=""
+else
+  dns="n"
+fi
+
+# Check the filter against HB_RESOURCE tuples if we got one
+if [ "$filter" != "" -a "$CHECK_TYPE" != "--connection" ]; then
+
+  # Loop over output for multiple matches
+  for item in $filter; do
+    for fwmark in $(echo "$HB_RESOURCES" |grep ${item} |cut -d: -f1); do
+      LVS_OUTPUT+="$($IPVSADM_BIN -L${dns} --sort $CHECK_TYPE -f $fwmark 2>/dev/null)"
+    done
+  done
+
+elif [ "$CHECK_TYPE" == "--connection" ]; then
+  
+  # Get our ipvsadm output
+  LVS_OUTPUT=`$IPVSADM_BIN -L${dns} $CHECK_TYPE 2>/dev/null`
+
+else
+
+  # Get our ipvsadm output
+  LVS_OUTPUT=`$IPVSADM_BIN -L${dns} --sort $CHECK_TYPE 2>/dev/null`
+
+fi
+
+# If we have output to display do it or give a nice message
+if [ "$CHECK_TYPE" != "--connection" -a $(echo "$LVS_OUTPUT" |grep -ce '  -> ') -lt 2 ]; then
+  if [ "$filter" == "" ]; then
+     echo "LVS Inactive.."
+  else
+     echo "Cluster ($filter ) is not active.."
+  fi
+
+elif [ "$CHECK_TYPE" == "--connection" ]; then
+
+     # Check for filters
+     if [ "$filter" != "" ]; then
+       echo "IPVS connections ($filter )" 
+       for item in $filter; do
+         match+="-e \"$item\" "
+       done
+     else
+       echo "IPVS connections"
+     fi
+
+     # Generate our GREP_LINE
+     if [ "$match" == "" ]; then
+       GREP_LINE="cat"
+     else
+       GREP_LINE="grep $match"
+     fi
+
+     # Print connection output
+     header=";pro;expire;state      ;source               ;virtual               ;destination"
+     echo -e "${header}\n$(echo "$LVS_OUTPUT" |grep -v -e "IPVS" -e "pro expire state" |awk '{print ";" $1 ";" $2 ";" $3 ";" $4 ";" $5 ";" $6}' |eval "${GREP_LINE}")" |column -t -s ';'
+
+elif [ "$CHECK_TYPE" == "" ]; then
+
+     # Print monitor output
+     echo "IPVS monitor"
+     header="; ; ;Forward;Weight;ActiveConn;InActConn;"
+     echo -e "${header}\n$(echo "$LVS_OUTPUT" |awk '{print ";  "$2 "; ;" $3 ";" $4 ";" $5 ";" $6}' |$SED_BIN -e "s/:0//g" -e "s/127.0.[0-9]\+.1/Down Page/g" |eval "${SED_LINE}")" |column -t -s ';' |egrep -v -e "Address:Port" -e 'Virtual[[:blank:]]+Server[[:blank:]]+version'
+
+else
+ 
+  # Print our header info once
+  if [ "$CHECK_TYPE" == "--rate" ]; then
+     echo "IPVS rates"
+     header="; ; ;Conn/sec;Pkts/sec;Byte/sec"
+  elif [ "$CHECK_TYPE" == "--stats" ]; then
+     echo "IPVS statistics"
+     header="; ; ;Connections;Packets;Bytes"
+  else
+     echo "IPVS monitor"
+     header="; ; ;Forward;Weight;ActiveConn;InActConn;"
+  fi
+
+  # Print the rate/statistic output
+  echo -e "${header}\n$(echo "$LVS_OUTPUT" |awk '{print ";  "$2 "; ;" $3 ";" $4 ";" $6}' |$SED_BIN -e "s/:0//g" -e "s/127.0.[0-9]\+.1/Down Page/g" |eval "${SED_LINE}")" |column -t -s ';' |egrep -v -e "Address:Port" -e 'Virtual[[:blank:]]+Server[[:blank:]]+version' 
+
+fi
+
+
+# Exit if we are being called by the watch process.
+if [ "${!#}" == "$HOSTNAME" ]; then
+ exit 0
+fi
+
+# Only run if we are not in one shot mode
+if [ "$ONE_SHOT" != "1" ]; then
+  exec watch $watch_arg -- $0 $@ -=- $HOSTNAME
+fi

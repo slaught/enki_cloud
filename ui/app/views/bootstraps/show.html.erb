@@ -1,0 +1,26 @@
+<h1><%= @bootstrap.id %></h1>
+
+<%= render :partial => 'item' %>
+
+<div>
+<h6> nics </h6>
+<table>
+<% unless @bootstrap.nics.nil? %>
+<% a =  YAML.load(@bootstrap.nics).map do |nic| %>
+<tr>
+<td><%= nic.first %></td><td><%= nic.last %></td>
+</tr>
+<%end%>
+<%end%>
+</table>
+</div>
+
+<div>
+<h6>dmesg</h6><p><pre><%= @bootstrap.dmesg %></pre></p>
+<h6>dmidecode</h6><p><pre><%= @bootstrap.dmidecode %></pre></p>
+<h6>proc_cpuinfo</h6><p><pre><%= @bootstrap.proc_cpuinfo %></pre></p>
+<h6>proc_meminfo</h6><p><pre><%= @bootstrap.proc_meminfo %></pre></p>
+</div>
+
+<%= link_to 'Edit', edit_bootstrap_path(@bootstrap) %> |
+<%= link_to 'Back', bootstraps_path %>

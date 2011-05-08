@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# This script ensures execution of programs only on cluster masters 
+
+# Check for cluster configuration
+if [ ! -f /etc/enki/cluster-info ]; then
+        echo " *** ERROR ***"
+        echo "#############################################"
+        echo "#     Can not read cluster info file!       #"
+        echo "#  Make sure /etc/enki/cluster-info exists!  #"
+        echo "#############################################"
+        exit 1
+fi
+
+# Pull in cluster information
+. /etc/enki/cluster-info
+
+FQDN_HOSTNAME=`hostname --fqdn`
+LOC_HOSTNAME=`echo $FQDN_HOSTNAME |cut -d. -f1,2`
+
+if [ "$LOC_HOSTNAME" == "$MASTER" ]; then
+ exit 0
+fi
+
+exit 1
+

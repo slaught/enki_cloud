@@ -1,0 +1,83 @@
+<div id="xen" class="node_data">
+<% if @node.node_type.is_virtual? %>
+  <h2>Xen Host Domain</h2>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <% if @xen_host.nil? %>
+    <% if permitted_to? :create, :xen %>
+      <div>
+        <% form_remote_tag(:html => {:id=>"map_to_xen_host",
+              :action => { :action => "map_to_xen_host", :id => node.id}},
+              :url => url_for({ :action => "map_to_xen_host",:id => node.id}),
+              :update => 'xen') do %>
+          <%= collection_select(:xen_mapping, :host_id,
+            Node.find_all_physical.select{|n| n.datacenter == node.datacenter},
+            :node_id, :fn_prefix ) %>
+          <%= submit_tag "Map to Xen Host" %>
+        <% end %>
+      </div>
+    <% else %>
+      <p><strong>Sorry! There is no Xen Mapping for this node</strong></p>
+    <% end %>
+  <% else %>
+      <%= link_to_node(@xen_host) %>
+      <% if permitted_to? :delete, :xen %>
+      
+        <% form_remote_tag(:html => {:id=>"remove_from_xen_host",
+                :action => { :action => "remove_from_xen_host", :id => node.id}},
+                :url => url_for({ :action => "remove_from_xen_host",:id => node.id}),
+                :update => 'xen') do %>
+          <%= submit_tag "Unmap Xen Host" %>
+        <% end %>
+      
+      <% end %>
+  <% end %>
+<% elsif @node.is_xen_dom0? %>
+  <h2>Guest Nodes</h2>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <table>
+  <tr>
+    <th>Name</th>
+    <th>Node IP Address</th>
+    <th>CPUs</th>
+    <th>Ram</th>
+  </tr>
+  <% for node in @xen_guests  %>
+  <tr>
+  <td><%= link_to_node(node) %></td>
+  <td><%= node.mgmt_ip_address %></td>
+    <% if node.model.nil? then %>
+      <td>2</td><td>4096 mb</td>
+    <%else %>
+      <td><%= node.model.cpu_cores %></td>
+      <td><%= node.model.ram %> mb</td>
+    <%end %>
+    <% if permitted_to? :delete, :xen %>
+      <td class="td_extra">
+        <% form_remote_tag(:html => {:id=>"remove_xen_guest",
+                :title => 'Unassign guest',
+                :action => { :action => "remove_xen_guest", :id => @node.id, :guest_id => node.id}},
+                :url => url_for({ :action => "remove_xen_guest",:id => @node.id, :guest_id => node.id}),
+                :update => 'xen') do %>
+          <%= image_submit_tag("/images/silk/delete.png", :alt => 'Unassign guest') %>
+        <% end %>
+      </td>
+    <% end %>
+  </tr>
+  <% end %>
+  </table>
+  <br />
+  <% if permitted_to? :create, :xen %>
+    <div>
+      <% form_remote_tag(:html => {:id=>"add_xen_guest",
+            :action => { :action => "add_xen_guest", :id => @node.id}},
+            :url => url_for({ :action => "add_xen_guest",:id => @node.id}),
+            :update => 'xen') do %>
+        <%= collection_select(:xen_mapping, :guest_id,
+          XenMapping.unassigned.select{|n| n.datacenter == @node.datacenter},
+          :node_id, :fn_prefix ) %>
+        <%= submit_tag "Map to this Host" %>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>
+</div>

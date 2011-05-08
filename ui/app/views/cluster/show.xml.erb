@@ -1,0 +1,12 @@
+<cluster id="<%= @cluster.cluster_id %>" name="<%= @cluster.name %>">
+    <services>
+    <% for s in @cluster.services %>
+        <service name="<%= s.name %>" id="<%= s.service_id %>"></service>
+    <% end %>
+    </services>
+    <nodes>
+    <% for n in @cluster.nodes %>
+        <domu name="<%= n.fn_prefix %>" id="<%= n.node_id %>"></domu>
+    <% end %>
+    </nodes>
+</cluster>

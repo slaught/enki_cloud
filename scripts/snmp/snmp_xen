@@ -1,0 +1,34 @@
+#! /bin/bash
+#
+# Description:
+#
+# This plugin prints the Xen DomU's that are running.
+#
+# Usage: ./snmp_xen
+#
+# -------------------------------------------------------
+# nagios      ALL=NOPASSWD: /usr/sbin/xm
+#
+#
+AWK_BIN="/usr/bin/awk"
+XM_BIN="/usr/sbin/xm"
+EGREP_BIN="/bin/egrep"
+GREP_BIN="/bin/grep"
+
+#########################################################################################
+
+if [ ! -e $XM_BIN ]; then
+        echo "Xen CLI (xm) not found"
+        exit 1
+fi
+
+cli_output=`$XM_BIN list`
+cli_status=$?
+
+# Lets only continue if xm gives us some valid output
+if [ $cli_status -eq 0 ]; then
+
+  # Grab all the running Xen DomUs 
+  echo "$cli_output" |$EGREP_BIN -e "r-----|-b----" |$GREP_BIN -v "Domain-0" |$AWK_BIN '{print $1}' |tr -t '\n' ' '
+
+fi

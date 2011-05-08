@@ -1,0 +1,26 @@
+<% set_html_title "Database Clusters" %>
+<h1>Database Cluster</h1>
+
+<table>
+  <tr>
+    <th>Name</th>
+
+    <th>Description</th>
+    <th>Service</th>
+    <th>Databases</th>
+    <th></th>
+  </tr>
+<% for database_cluster in @database_clusters %>
+  <tr>
+    <td><%= link_to database_cluster.name, database_cluster %></td>
+    <td><%=h database_cluster.description %></td>
+    <td><%=link_to database_cluster.service.url,  {:controller => 'service', :action => 'show', :id => database_cluster.service} %></td>
+    <td><%=h database_cluster.database_names.map { |d| d.name }.join(', ') %></td>
+    <td><%= link_to 'Edit', edit_database_cluster_path(database_cluster) %></td>
+  </tr>
+<% end %>
+</table>
+
+<br />
+
+<%= link_to 'New database_cluster', new_database_cluster_path %>

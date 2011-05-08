@@ -1,0 +1,35 @@
+<% set_html_title "Create New Service" %>
+<h1>New Service</h1>
+
+<% form_for(:service, @service, :url => {:action => 'create'}) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :name %><br />
+    <%= f.text_field :name %>
+  </p>
+  <p>
+    <%= f.label :description %><br />
+    <%= f.text_field :description %>
+  </p>
+  <p> High Available network <br /> 
+    <%= f.select(:availability, [['Internal Campus','campus'],['External Public','public']] ) %>
+  </p>
+  <p> <%= f.label :protocol_id   %><br /> 
+    <%= collection_select(:service ,  :protocol_id, Protocol.all , :protocol_id, :proto ) %>
+  </p>
+  <p>
+    <%= f.label :service_port  %><br /> <%= f.text_field :service_port    %><br />
+    Service port is the HA Port
+  </p>
+  <p> <%= f.label :local_port  %><br /> <%= f.text_field :local_port    %><br />
+    Local unique port. Leave blank if equal to HA Port
+  </p>
+  <p> <%= f.label :url %><br /> <%= f.text_field :url %> </p>
+
+
+
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+
+<%= link_to 'Back', :action => 'list' %>

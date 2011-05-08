@@ -1,0 +1,6 @@
+#!/bin/sh
+
+D=`dirname $0`
+APP=`dirname $D`
+export RAILS_ENV=production
+exec ${APP}/script/server -p 8000 >/dev/null 2> ${APP}/log/stderr.log 

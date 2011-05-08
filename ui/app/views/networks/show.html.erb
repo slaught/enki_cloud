@@ -1,0 +1,40 @@
+<% set_html_title @network.to_label, "Networks" %>
+<h1><%= @network.to_label %></h1>
+<div id="network_description">
+  <em><%= @network.description %></em>
+  <dl>
+  <dt>Ip range</dt> <dd><%= @network.ip_range%></dd>
+  <dt>Vlan</dt><dd><%= @network.vlan %></dd>
+  <dt>Network type</dt><dd><%= @network.network_type.to_label %></dd>
+  <dt>Network gateway</dt><dd><%= @network.gateway %></dd>
+  </dl>
+</div>
+<br/>
+<% if @network.network_type.name == 'san' and not (@san = San.find_by_network_id(@network.id)).nil? %>
+  <%= render :partial => 'san/node_list',
+             :locals => {:nodes => @san.san_nodes , :san =>@san } %>
+  <% add_done_ips @san.san_nodes.map{|n| n.ip_address} %>
+<%# TODO: remove ramparts stuff once they get integrated properly into rest of system %>
+<% elsif @network == Rampart.locale_network and not (ramparts = all_locale_ramparts).nil? %>
+  <h2>Ramparts</h2>
+  <%= render :partial => 'rampart/rampart_list', :locals => {:ramparts => ramparts} %>
+  <% add_done_ips ramparts.map{|r| r.locale_ip_address} %>
+<% elsif @network == Rampart.public_network and not (ramparts = all_public_ramparts).nil? %>
+  <h2>Ramparts</h2>
+  <%= render :partial => 'rampart/rampart_list', :locals => {:ramparts => ramparts} %>
+  <% add_done_ips ramparts.map{|r| r.public_ip_address} %>
+<% else %>
+  <% @other = false %>
+<% end %>
+
+<% if not (other_ips = get_other_ips).empty? %>
+  <br/>
+  <h2><%= @other ? 'Other ' : '' %>IP Addresses</h2>
+  <%= render :partial => 'ip_address_list',
+             :locals => {:network_ips => other_ips} %>
+<% end %>
+<br/>
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", edit_network_path(@network) %></li>
+  <li><%= link_to "Back", networks_path %></li>
+</ul>

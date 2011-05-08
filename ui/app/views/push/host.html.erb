@@ -1,0 +1,12 @@
+<h1>Host Push</h1>
+
+<% form_tag url_for({:controller => "push", :action => "host_push"}), :method => "get" do %>
+  <%= radio_button_tag "hosts", "all", true %>
+  <%= label_tag "hosts_all", "All hosts" %><br/>
+  <%= radio_button_tag "hosts", "one" %>
+  <%= label_tag "hosts_one", "One host" %><br/>
+
+  <%= label_tag "host", "Hostname" %><br/>
+  <%= text_field_tag "host" %><br/>
+  <%= image_submit_tag "red_button.png" %>
+<% end %>

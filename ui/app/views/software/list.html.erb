@@ -1,0 +1,34 @@
+<% set_html_title "Os Versions" %>
+<div id="osversion_data">
+
+  <h1>Os Versions</h1>
+  <% if permitted_to? :create, :software %>
+  <ul>
+    <li><%= link_to "Add Distribution", :action => "new_dist" %></li>
+    <li><%= link_to "Add Kernel", :action => "new" %></li>
+  </ul>
+  <% end %>
+  <table>
+    <tr>
+      <th>Distribution</th>
+      <th>Kernel</th>
+    </tr>
+  <% @distributions.each do |dist| %>
+    <tr>
+      <td><%= link_to dist.name, :action => "edit_dist", :id => dist %></td>
+      <td>
+        <table class="sub_table">
+        <% dist.os_versions.each do |osv| %>
+          <tr>
+            <td style="background-color: #fff">
+              <%= link_to osv.kernel, :action => "edit", :id => osv %>
+            </td>
+          </tr>
+        <% end %>
+        </table>
+      </td>
+    </tr>
+  <% end %>
+  </table>
+
+</div>

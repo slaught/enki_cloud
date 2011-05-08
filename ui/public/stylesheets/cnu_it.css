@@ -1,0 +1,200 @@
+    html {
+      margin: 0;
+      padding: 0;
+      background: #999;
+      font: normal 76% "Lucida Grande", Verdana, Helvetica, sans-serif; }
+
+    body {
+      margin: 2em 0;
+      padding: 2em 1em;
+      border: 2px solid gray;
+      background: white;
+      /* color: #222; */}
+/*
+    h1 {
+      font-size: 2em;
+      font-weight: normal;
+      margin: 0 0 1em 0; }
+
+    h2 {
+      font-size: 1.4em;
+      margin: 1em 0 .5em 0; }
+*/
+/*
+    pre {
+      font-size: 13px;
+      font-family: Monaco, "DejaVu Sans Mono", "Bitstream Vera Mono", "Courier New", monospace; }
+*/
+
+    body { background-color: #fff; color: #333; }
+
+    body, p, ol, ul, td {
+      font-family: verdana, arial, helvetica, sans-serif;
+      font-size:   13px;
+      line-height: 18px;
+    }
+
+    pre {
+      background-color: #eee;
+      padding: 10px;
+      font-size: 11px;
+    }
+
+    a { color: #000; }
+    a:visited { color: #666; }
+    a:hover { color: #fff; background-color:#000; }
+
+    .fieldWithErrors {
+      padding: 2px;
+      background-color: red;
+      display: table;
+    }
+
+    #errorExplanation {
+      width: 400px;
+      border: 2px solid red;
+      padding: 7px;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      background-color: #f0f0f0;
+    }
+
+    #errorExplanation h2 {
+      text-align: left;
+      font-weight: bold;
+      padding: 5px 5px 5px 15px;
+      font-size: 12px;
+      margin: -7px;
+      background-color: #c00;
+      color: #fff;
+    }
+
+    #errorExplanation p {
+      color: #333;
+      margin-bottom: 0;
+      padding: 5px;
+    }
+
+    #errorExplanation ul li {
+      font-size: 12px;
+      list-style: square;
+    }
+    #warningExplaination {
+      border: 2px solid #FF8C00;
+    }
+
+/* Sortable tables */
+table.sortable thead {
+    background-color:#eee;
+    color:#666666;
+    font-weight: bold;
+    cursor: default;
+}
+
+#metanav { position: absolute; }
+#metanav li {
+        border-left: 1px solid #98A5B3;
+        float: left;
+        padding: 0 5px;
+        line-height: 1.4;
+}
+#metanav li.user-bar-greeting { border-left: 0; }
+#metanav li.user-bar-action { color: #ebeb00; font-weight: bold; }
+
+/*for rightmost advanced links navigation*/
+ul.rightnav {
+  list-style: none;
+        margin: 0;    
+        border: 0; padding: 0; 
+        right: 10px; top: 5px;
+        height: 15px;
+    }
+
+    /*for leftmost project navigation*/
+ul.projectnav {
+        left: 10px;
+        top: 30px;
+        height: 30px;
+        padding-top: 2px;
+        }
+        ul.projectnav li {
+            line-height: 2.0 !important;
+        }
+        ul.projectnav li.selector_container {
+            margin-left:-5px;
+        }
+        ul.projectnav li div#project_selector_form {
+            margin-top:2px;
+        }
+        ul.projectnav li select {
+            width: 100px;
+        }
+        ul.projectnav li a#project_selector_link {
+            display: block;
+            white-space: nowrap;
+            width: 95px;
+            height: 2em;
+            overflow: hidden;
+        }
+
+table.disks {
+  border: 1px solid #666666;
+  border-collapse: collapse;
+}
+
+table.disks tr { border: 1px solid #666666; }
+table.disks td { border: 1px solid #666666; }
+table.disks th { border: 1px solid #666666; }
+
+
+ul#welcome { }
+#wli { font-size: 18px }
+
+.form_table {
+  border: none ;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+table.form_table td:first-child {
+    font-weight: bold;
+/*  text-align: center; */
+   color: darkred; 
+}
+table.form_table col.entry_field {
+  text-align: left; 
+}
+
+div.node_page {
+      margin: 1em;
+      padding: 1em;
+      border: 2px solid gray;
+      background: white;
+      color: #222; }
+      
+/* Zebra Zebra Everywhere! CSS3 pseudo selectors for the win. */
+table tr:nth-child(even) { background-color: #BBBBBB; }
+/* make work with other browsers */
+.even { background-color: #BBBBBB; }
+
+/* New Menu */
+div#wrapper { width: 100%;}
+div#user_menu { float: left; margin-right: 5px; width: 100px;}
+div#app_content { float: left;}
+
+h1#app_title { background-image: url("/images/valuecard_big.png"); background-repeat: no-repeat; background-position: top left; height: 40px; padding: 10px 0 0 55px; margin: 0px;}
+
+#app_title a { text-decoration: none; color: #000; }
+#app_title a:hover { text-decoration: none; color: #000; background-color: #fff;}
+#app_title a:visited { text-decoration: none; color: #000; }
+
+ul#usernav { list-style: none; padding: 0;}
+ul#usernav li { margin: 0 0 5px 0; }
+ul#usernav li span ul#node_toc.toc { list-style: none; padding: 5px;}
+
+textarea:focus, input:focus {
+  border: 2px solid #900;
+  background: #fdecb2;
+}
+
+.system_warning { background-color: #fcc; color: #f22; border: 1px solid #f66; padding: 5px; display: inline;}

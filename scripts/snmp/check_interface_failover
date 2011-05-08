@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# Michael Vallaly (July '09) Ver 1.0
+
+# This script checks all slave interfaces on bonded connections for link
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+ETHTOOL_BIN="/usr/sbin/ethtool"
+
+#########################################################################################
+
+# Check for ETHTOOL_BIN
+if [ ! -x $ETHTOOL_BIN ]; then
+        echo "UNKNOWN - Ethtool utility not found!"
+        exit $STATE_UNKNOWN
+fi
+
+### Globals
+
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+# Check if we have the bonding driver loaded
+if [ ! -r /sys/class/net/bonding_masters ]; then
+        echo "CRITICAL - Interface bonding is not enabled"
+        exit $STATE_CRITICAL
+fi
+
+# Get the number of bonding interfaces
+num_of_bonds=`cat /sys/class/net/bonding_masters |wc -w`
+
+# Collect our bond interfaces
+for bond_master in `cat /sys/class/net/bonding_masters`; do
+
+  # Collect our slave interfaces
+  num_of_slaves=`cat /sys/class/net/$bond_master/bonding/slaves |wc -w`
+
+  # Check that we have slaves bound
+  if [ $num_of_slaves -lt "1" ]; then
+    script_output="$bond_master has no slave interfaces configured"
+    WARN_COUNT=1
+  fi
+
+  # Check for bonding mode active-backup
+  if [ "`cat /sys/class/net/$bond_master/type`" -ne "1" ]; then
+    script_output="$bond_master not set to active-backup mode!"
+    WARN_COUNT=1
+  fi
+  
+  for slave in `cat /sys/class/net/$bond_master/bonding/slaves`; do
+
+    # Get our link status
+    ethtool_output=`$ETHTOOL_BIN $slave |grep -e "Link detected:"`
+   
+    if `echo $ethtool_output |grep -qe "yes"`; then
+      continue
+    elif `echo $ethtool_output |grep -qe "no"`; then
+      script_output+="$ethtool_output "
+      CRIT_COUNT=1
+    else
+      script_output+="$ethtool_output "
+      UNK_COUNT=1
+    fi
+
+  done
+
+done
+
+# Print out output and exit
+if [ "$CRIT_COUNT" -ne 0 ]; then
+  output_status="CRITICAL"
+  EXIT_STATUS=$STATE_CRITICAL
+elif [ "$WARN_COUNT" -ne 0 ]; then
+  output_status="WARNING"
+  EXIT_STATUS=$STATE_WARNING
+elif [ "$UNK_COUNT" -ne 0 ]; then
+  output_status="UNKNOWN"
+  EXIT_STATUS=$STATE_UNKOWN
+else
+  output_status="OK"
+  if [ "$num_of_bonds" -gt "1" ]; then
+    script_output="$num_of_bonds network interfaces are configured for failover"
+  else
+    script_output="Network interface is configured for failover"
+  fi
+  EXIT_STATUS=$STATE_OK
+fi
+
+# Output our status and exit
+echo "$output_status - $script_output"
+exit $EXIT_STATUS
+

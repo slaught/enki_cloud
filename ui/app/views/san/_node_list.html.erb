@@ -1,0 +1,48 @@
+<div id="san_nodes">
+<h2>Nodes</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table>
+<tr>
+  <th>Hostname</th>
+  <th>SAN IP</th>
+  <th>Management IP Address</th>
+  <th>OS</th>
+</tr>
+<% for sn in nodes %>
+<tr>
+<td><%= link_to sn.node.to_label, :action => "show",:controller=>"node",:id=> sn.node_id %></td>
+<td><%= sn.ip_address %></td>
+<td><%= sn.node.mgmt_ip_address %></td>
+<% if sn.node.os_version.nil? %>
+<td></td>
+<% else %>
+<td><%= sn.node.os_version.distribution %>(<%= sn.node.os_version.kernel %>)</td>
+<% end %>
+  <% permitted_to? :remove_node, :san do %>
+     <td class="td_extra">
+  <% form_remote_tag(:html => {:id=>"remove_node_#{sn.node_id}",
+         :action => { :controller => 'san', :action => "remove_node", :id => san.id},
+         :title => 'Remove node'},
+         :url => url_for({ :controller => 'san', :action => "remove_node", :id => san.id}), 
+         :update => 'san_nodes') do  %>
+    <%= hidden_field_tag( "node", sn.node_id) %>
+    <%= image_submit_tag "/images/silk/delete.png" %>
+  <% end %>
+  </td>
+  <% end %>
+</tr>
+<% end %>
+</table>
+
+<% permitted_to? :add_node, :san do %>
+<p>
+  <% form_remote_tag(:html => {:id=>"add_node_to_san",
+         :action => { :controller => 'san', :action => "add_node", :id => san.id}},
+         :url => url_for({ :controller => 'san', :action => "add_node", :id => san.id}), 
+         :update => 'san_nodes') do  %>
+    <%= collection_select(:node, :node_id, Node.find_all_active_by_datacenter(san.magic_datacenter), :node_id, :fn_prefix) %>
+    <%= submit_tag "Add Node" %>
+  <% end %>
+  </p>
+<%end %>
+</div>

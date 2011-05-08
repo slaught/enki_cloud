@@ -1,0 +1,8 @@
+switch.dc:
+  :user: "testuser"
+  :auth_proto: "MD5"
+  :auth_pass: "authpass"
+  :sec_level: "authPriv"
+  :priv_proto: "DES"
+  :priv_pass: "authpass"
+  :hostname: "testhost"

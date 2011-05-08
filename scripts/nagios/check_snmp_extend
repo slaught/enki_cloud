@@ -1,0 +1,256 @@
+#!/bin/bash
+
+# Michael Vallaly (Feb '10) Ver 2.0 
+
+# This script returns Nagios/Cacti Status for custom OIDs on remote boxen.
+# https://wiki.example.com/wiki/index.php/tech:Nagios
+
+# SNMP.conf
+#  extend <enki_oid> '' '<command> [command_args]'
+
+# http://www.net-snmp.org/docs/mibs/NET-SNMP-EXTEND-MIB.txt
+# nsExtendOutput1Line 	DisplayString	<enki_oid>.3.1.1.0
+# nsExtendOutputFull  	DisplayString	<enki_oid>.3.1.2.0
+# nsExtendOutNumLines 	INTEGER 	<enki_oid>.3.1.3.0
+# nsExtendResult      	INTEGER 	<enki_oid>.3.1.4.0
+
+BC_BIN="/usr/bin/bc"
+SNMPGET_BIN="/usr/bin/snmpget"
+
+
+# ENKI OID Codes (https://wiki.example.com/mediawiki/index.php/tech:SNMP)
+CODE_VALUE=0
+CODE_ERROR=1
+CODE_STRINGKEY=2 # Label:Value:Max:Min
+CODE_PERCENT=3
+
+# Nagios exit states
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+#TODO Output for Cacti?
+
+############################################################################
+
+# Check for script dependencies
+for bindep in $BC_BIN $SNMPGET_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+# Print our usage line
+usage="Usage: $0 -h <host> -o <oid> -u <username> -p <password>\n\n
+\t-h  Remote Host\n
+\t-o  Check OID\n
+\t-l  Description Label\n\n
+\t-m  Match (regex)\n\n
+\t-c  Lower bound critical level\n
+\t-w  Lower bound warning level\n
+\t-C  Upper bound critical level\n
+\t-W  Upper bound warning level\n"
+
+# Check our parameters and set the service_type/check_filters 
+while getopts "c:C:h:o:l:m:p:u:w:W:" options; do
+  case $options in
+    h ) HOST="$OPTARG";;
+    o ) ENKI_OID="$OPTARG";;
+    l ) LABEL="$OPTARG : ";;
+    m ) MATCH="$OPTARG";;
+    p ) password="$OPTARG";;
+    c ) lwr_crit_threshold="$OPTARG";;
+    C ) up_crit_threshold="$OPTARG";;
+    u ) username="$OPTARG";;
+    w ) lwr_warn_threshold="$OPTARG";;
+    W ) up_warn_threshold="$OPTARG";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+if [ $# -le 5 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Set SNMP options
+SNMP_OPT="-Ov -v3 -l authPriv -a MD5 -u $username -A $password -x DES -X $password"
+
+# Global Counters
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+# Do our SNMPGETs
+REMOTE_SNMP_OUTPUT=`${SNMPGET_BIN} ${HOST} ${SNMP_OPT} ${ENKI_OID}.3.1.1.0 2> /dev/null |awk -F'"' '{print $2}'`
+LOCAL_SNMP_STATUS=$?
+REMOTE_SNMP_STATUS=`${SNMPGET_BIN} ${HOST} ${SNMP_OPT} ${ENKI_OID}.3.1.4.0 2> /dev/null |awk -F': ' '{print $2}'`
+
+# Grab our RESULT/TYPE encoded in the OID
+ENKI_RESULT_TYPE=`echo ${ENKI_OID} |cut -s -d. -f13` 
+
+# Check for invalid SNMP response
+if [ "$LOCAL_SNMP_STATUS" -ne 0 ]; then
+  echo -n "Error executing SNMPGET to ${HOST}! Exiting.. "
+  exit $STATE_UNKNOWN
+elif  [ "${REMOTE_SNMP_OUTPUT}x" == "x" ]; then
+ echo -n "No SNMP response from remote server! Is (${ENKI_OID}) a valid OID for ${HOST}? Exiting.." 
+ exit $STATE_UNKNOWN
+fi 
+
+# Handle Nagios Checks
+if [ "$ENKI_RESULT_TYPE" -eq "$CODE_ERROR" ]; then
+
+  # Output the String output and return the remote exit status
+  echo -n "${LABEL}$REMOTE_SNMP_OUTPUT"
+  exit $REMOTE_SNMP_STATUS
+
+# Handle REGEX matching on returned string 
+elif [ "$ENKI_RESULT_TYPE" -eq "$CODE_VALUE" ]; then
+ 
+  if [ "${MATCH}x" == "x" ] ; then
+    echo -n "Match string not specified! Exiting.. "
+    exit $STATE_CRITICAL
+  fi 
+
+  if [ $(echo "$REMOTE_SNMP_OUTPUT" |grep -ce "$MATCH") -gt 0 ]; then
+    echo -n "${LABEL}$REMOTE_SNMP_OUTPUT"
+  else
+    echo -n "${LABEL}$REMOTE_SNMP_OUTPUT"
+    CRIT_COUNT=1
+  fi
+
+# Handle Cacti String Keys
+elif [ "$ENKI_RESULT_TYPE" -eq "$CODE_STRINGKEY" ]; then
+
+  REMOTE_SNMP_OUTPUT_LIST=`${SNMPGET_BIN} ${HOST} ${SNMP_OPT} ${ENKI_OID}.3.1.2.0 |tr -t '\n' '\0' |cut -d'"' -f2 |tr -t '\0' '\n'`
+
+  # Delimit on newline only
+  IFS=$'\n'
+
+  # Loop through each device passed
+  for device in ${REMOTE_SNMP_OUTPUT_LIST}; do
+
+    device_warn=0
+    device_crit=0
+
+    # Split our output for comparison
+    device_label=`echo $device |cut -s -d: -f1`
+    device_status=`echo $device |cut -s -d: -f2`
+
+    # Override upper bounds if passed
+    if [ "${up_crit_threshold}x" == "x" ]; then
+      device_max=`echo $device |cut -s -d: -f3`
+    else
+      device_max=$up_crit_threshold
+    fi
+
+    # Override lower bounds if passed
+    if [ "${lwr_crit_threshold}x" == "x" ]; then
+      device_min=`echo $device |cut -s -d: -f4`
+    else
+      device_min=$lwr_crit_threshold
+    fi 
+
+    # We only have a lower range to compare against
+    if [ "${device_max}x" == "x" ] && [ "${device_min}x" != "x" ]; then
+
+      if [ "`echo "$device_status >= $device_min" |$BC_BIN`" -eq 0 ]; then
+        device_crit=1
+      elif [ "${lwr_warn_threshold}x" != "x" ] && [ "`echo "$device_status <= $lwr_warn_threshold" |$BC_BIN`" -eq 1 ]; then
+        device_warn=1
+      fi
+
+      if [ $device_crit -eq 1 ]; then
+        output_status=`echo "$device_label (${device_min}*/${device_status}) - FAILED " $output_status`
+        CRIT_COUNT=1
+        continue
+      elif [ $device_warn -eq 1 ]; then
+        output_status=`echo "$device_label (${device_min}*/${device_status}) - WARNING " $output_status`
+        WARN_COUNT=1
+        continue
+      else
+        output_status=`echo "$device_label (${device_min}/${device_status}) - OK " $output_status`
+        continue
+      fi
+         
+     # We only have an upper range to compare against
+
+    elif [ "${device_min}x" == "x" ] && [ "${device_max}x" != "x" ]; then
+
+       if [ "`echo "$device_status <= $device_max" |$BC_BIN`" -eq 0 ]; then
+         device_crit=1
+       elif [ "${up_warn_threshold}x" != "x" ] && [ "`echo "$device_status >= $up_warn_threshold" |$BC_BIN`" -eq 1 ]; then
+         device_warn=1
+       fi
+
+       if [ $device_crit -eq 1 ]; then
+         output_status=`echo "$device_label (${device_status}/${device_max}*) - FAILED " $output_status`
+         CRIT_COUNT=1
+         continue
+       elif [ $device_warn -eq 1 ]; then
+         output_status=`echo "$device_label (${device_status}/${device_max}*) - WARNING " $output_status`
+         WARN_COUNT=1
+         continue
+       else
+         output_status=`echo "$device_label (${device_status}/${device_max}) - OK " $output_status`
+         continue
+       fi
+
+     # Compare against both upper and lower bounds
+    else 
+
+       if [ "`echo \"$device_status <= $device_min && $device_status >= $device_max\" |$BC_BIN`" -eq 1 ]; then
+         device_crit=3
+       elif [ "`echo \"$device_status >= $device_min\" |$BC_BIN`" -eq 0 ]; then
+         device_crit=1
+       elif [ "`echo \"$device_status <= $device_max\" |$BC_BIN`" -eq 0 ]; then
+         device_crit=2
+       elif [ "${up_warn_threshold}x" != "x" ] && [ "`echo "$device_status >= $up_warn_threshold" |$BC_BIN`" -eq 1 ]; then
+         device_warn+=1
+       elif [ "${lwr_warn_threshold}x" != "x" ] && [ "`echo "$device_status <= $lwr_warn_threshold" |$BC_BIN`" -eq 1 ]; then
+         device_warn+=2
+       fi
+
+       if [ $device_crit -gt 0 ]; then
+         output_status=`echo "$device_label (${device_min}$([ $device_crit -eq 1 ] || [ $device_crit -eq 3 ] && echo '*')/${device_status}/${device_max}$([ $device_crit -eq 2 ] || [ $device_crit -eq 3 ] && echo '*')) - FAILED " $output_status`
+         CRIT_COUNT=1
+         continue
+     elif [ $device_warn -gt 0 ]; then
+         output_status=`echo "$device_label (${device_min}$([ $device_warn -eq 1 ] || [ $device_warn -eq 3 ] && echo '*')/${device_status}/${device_max}$([ $device_warn -eq 2 ] || [ $device_warn -eq 3 ] && echo '*')) - WARNING " $output_status`
+         WARN_COUNT=1
+         continue
+      else
+         output_status=`echo "$device_label (${device_min}/${device_status}/${device_max}) - OK " $output_status`
+         continue
+      fi
+
+    fi
+
+  done
+
+else
+  echo "Unknown/Unsupported oid RESULT/TYPE ($ENKI_OID)! Exiting.. "
+  exit $STATE_UNKNOWN
+fi
+
+# Generate the proper exit status for nagios
+if [ "$CRIT_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_CRITICAL
+elif [ "$WARN_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_WARNING
+elif [ "$UNK_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_UNKOWN
+else
+   EXIT_STATUS=$STATE_OK
+fi
+
+# Print out status and exit
+echo -n "${LABEL}$output_status"
+exit $EXIT_STATUS
+

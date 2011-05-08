@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Update / Create local disk repository for apt installable binary packages.
+ 
+PACKAGE_ROOT="/etc/enki/apt-packages"
+
+################################################################################
+
+cd $PACKAGE_ROOT
+
+apt-ftparchive packages . | gzip -9c > ./Packages.gz
+

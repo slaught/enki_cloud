@@ -1,0 +1,22 @@
+steal.plugins('jquery/controller',
+			  'jquery/controller/subscribe',
+			  'jquery/controller/history',
+			  'jquery/view/ejs',
+			  'jquery/model',
+			  //'jquery/model/store',
+			  'jquery/dom/fixture',
+			  'jquery/dom/form_params',
+			  'jquery/event/hover',
+			  'mxui/tooltip',
+			  'mxui/filler')
+     .models('cluster','status','node')
+     .controllers('main','search','details','node_menu','load_balancers')
+     .views('//command/views/details/details.ejs',
+	 		'//command/views/details/downpage.ejs',
+			'//command/views/load_balancers/init.ejs',
+			'//command/views/load_balancers/slide_panel.ejs',
+			'//command/views/main/list.ejs',
+			'//command/views/main/node_icons.ejs',
+			'//command/views/main/node_status.ejs',
+			'//command/views/node_menu/node_links.ejs')
+	 .then('views/helpers')

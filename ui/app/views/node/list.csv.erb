@@ -1,0 +1,3 @@
+hostname, datacenter, fqdn, mgmt_ip, model, node_type
+<% for n in @nodes %>"<%= n.hostname %>", "<%= n.datacenter.name %>", "<%= n.fqdn %>", "<%= n.mgmt_ip_address %>", "<%= n.model.to_label if n.model %>", "<%= n.node_type.node_type %>"
+<% end %>

@@ -1,0 +1,46 @@
+--- 
+engineer: 
+  name: engineer
+  grant_update: true
+  grant_select: true
+  grant_create: true
+  role_id: 10
+  description: "Engineer Role: create clusters and delete "
+  grant_delete: true
+  grant_insert: true
+operator: 
+  name: operator
+  grant_update: true
+  grant_select: true
+  grant_create: false
+  role_id: 8
+  description: Operator Minor updates and new nodes
+  grant_delete: false
+  grant_insert: true
+admin: 
+  name: admin
+  grant_update: true
+  grant_select: true
+  grant_create: true
+  role_id: 6
+  description: "Admin Role: full access"
+  grant_delete: true
+  grant_insert: true
+sysadmin: 
+  name: sysadmin
+  grant_update: true
+  grant_select: true
+  grant_create: true
+  role_id: 9
+  description: Sysadmin Full updates and add to clusters
+  grant_delete: false
+  grant_insert: true
+guest: 
+  name: guest
+  grant_update: false
+  grant_select: true
+  grant_create: false
+  role_id: 7
+  description: "Guest Role: read only access"
+  grant_delete: false
+  grant_insert: false

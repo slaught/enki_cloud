@@ -1,0 +1,19 @@
+<div id="node_versions" class="node_data">
+<h2>Last 5 Changes</h2>
+<% unless @node.versions.empty? %>
+Node created by: <%= @node.versions.first.who %><br/>
+<ul>
+<% if @node.versions.length > 5 %>
+  <% for v in @node.versions.reverse[0,4] %>
+    <li><strong><%= time_ago_in_words(v.created_at) %> ago</strong> by <%= v.who %></li>
+  <% end %>
+<% else %>
+  <% for v in @node.versions.reverse %>
+    <li><strong><%= time_ago_in_words(v.created_at) %> ago</strong> by <%= v.who %></li>
+  <% end %>
+<% end %>
+</ul>
+<% else %>
+No Version Data
+<% end %>
+</div>

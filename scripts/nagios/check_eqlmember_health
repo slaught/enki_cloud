@@ -1,0 +1,94 @@
+#!/bin/bash
+#
+# Description:
+#
+# This script checks the health of all members in an Equallogic SAN group.
+#
+# Usage: ./check_eqlmember_health <SAN_GROUP_IP>
+#
+# Examples:
+#
+# ./check_eqlmember_health 10.32.0.10
+# EQX-SAN01 (OK), EQX-SAN02 (OK)
+#
+# Another Examples:
+#
+# ./check_eqlmember_health 10.32.0.10
+# EQX-SAN01 (Warning), EQX-SAN02 (OK)
+#
+# ./check_eqlmember_health 10.32.0.10
+# EQX-SAN01 (Critical), EQX-SAN02 (OK)
+#
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+SNMPWALK_BIN="/usr/bin/snmpwalk"
+SNMPGET_BIN="/usr/bin/snmpget"
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+MEMBER_HEALTH_OID=".1.3.6.1.4.1.12740.2.1.5.1.1.1"
+MEMBER_NAME_OID=".1.3.6.1.4.1.12740.2.1.1.1.9.1"
+
+if [ ! -e $SNMPWALK_BIN ]; then
+        echo "SNMPWALK ($SNMPWALK_BIN) not found!"
+        exit $STATE_UNKNOWN
+fi
+
+usage="Usage: ./check_eqlmember_health -g <SAN_GROUP_IP>"
+
+while getopts "g:" options; do
+  case $options in
+    g ) ip="$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 2 ]; then
+    echo $usage
+    exit 1
+fi
+
+# Get a list of the members in our group
+
+  cli_output=`$SNMPWALK_BIN -OnQ -c public -v2c $ip $MEMBER_HEALTH_OID |cut -d. -f15| sed -e 's/ = /,/g'`
+  cli_status=$?
+
+
+exit_status=0
+
+# Print out our response
+for member in $cli_output; do
+
+  id=`echo $member |cut -d, -f1`
+  status=`echo $member |cut -d, -f2`
+  name=`$SNMPGET_BIN -Onq -c public -v2c $ip $MEMBER_NAME_OID.$id |cut -d' ' -f2 |tr -d \"`
+
+  if [ "$status" == "1" ]; then
+    display="(OK)"
+  elif [ "$status" == "2" ]; then
+    display="(Warning)"
+    if [ $status -gt $exit_status ]; then
+      exit_status=$STATE_WARNING
+    fi 
+  elif [ "$status" == "3" ]; then
+    display="(Critical)"
+    if [ $status -gt $exit_status ]; then
+      exit_status=$STATE_CRITICAL
+    fi
+  fi
+
+  output+=`echo -e " $name $display"` 
+
+done
+
+echo $output
+exit $exit_status

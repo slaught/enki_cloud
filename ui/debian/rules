@@ -1,0 +1,87 @@
+#!/usr/bin/make -f
+
+# include /usr/share/cdbs/1/rules/debhelper.mk
+include /usr/share/cdbs/1/rules/buildvars.mk
+
+PKG=$(DEB_SOURCE_PACKAGE)
+LN=ln -sf
+
+clean::
+	@echo "clean me"
+#	dh_testdir
+#	dh_testroot
+	rm -f build-stamp install-stamp
+	-echo $(MAKE) clean
+	dh_clean
+	-rm debian/$(PKG).dirs
+
+package-name:
+	@echo DEB_SOURCE_PACKAGE=$(DEB_SOURCE_PACKAGE)
+
+	
+build: build-stamp
+
+build-stamp:
+	dh_testdir
+	echo $(MAKE)
+	touch build-stamp
+
+install: install-stamp
+
+install-stamp: build-stamp install-setup install-files install-links
+	touch install-stamp
+
+FAKEROOT=./debian/$(PKG)
+
+debian/$(PKG).dirs: debian/package.dirs 
+	@cp $< $@
+
+install-setup: debian/$(PKG).dirs
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	mkdir  $(FAKEROOT) 
+	( cd $(FAKEROOT) ; cat ../$(PKG).dirs | tr '\n' '\0'| xargs -0 -Ix install -d -m 755 x)
+	#dh_installdirs
+	#touch install-setup
+	
+include rules1.mk
+
+install-links:
+	@echo 1 >/dev/null
+
+# Build architecture-independent files here.
+# We have nothing to do 
+binary-indep: build install
+	@echo  nothing >/dev/null 
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir
+	dh_testroot
+	dh_installdocs
+	dh_installinit -n --name=cnu-it 
+	dh_installinit -n --name=cnu-it-worker
+	#  -u"start 2 3 . stop 11 1 ."
+	dh_installcron
+	dh_installman
+	dh_link
+	# dh_installchangelogs ChangeLog
+	dh_installchangelogs 
+	#dh_installdebconf
+	# dh_strip
+	# dh_fixperms
+	chown cnuit:cnuit -R $(FAKEROOT)/export/web/cnu_it
+	dh_compress
+	dh_installdeb
+	#dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb 
+
+source diff:                                                                  
+	@echo >&2 'source and diff are obsolete - use dpkg-source -b'; false
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary
+

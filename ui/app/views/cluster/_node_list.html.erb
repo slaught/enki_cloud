@@ -1,0 +1,50 @@
+<div id="cluster_nodes" class="node_data">
+<h2>Nodes</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table class="sortable">
+<tr>
+  <th>Hostname</th>
+  <th>Cluster IP</th>
+  <th>Management IP Address</th>
+  <th>OS</th>
+</tr>
+<% for node in nodes %>
+<tr>
+<td><%= link_to_node(node) %></td>
+<td sorttable_customkey="<%= sorttable_ip(node.ip_address) %>"><%= node.ip_address %></td>
+<td sorttable_customkey="<%= sorttable_ip(node.mgmt_ip_address) %>"><%= node.mgmt_ip_address %></td>
+<% if node.os_version.nil? %>
+<td></td>
+<% else %>
+<td><%= node.os_version.distribution %>(<%= node.os_version.kernel %>)</td>
+<% end %>
+  <% permitted_to? :remove_node, :cluster do %>
+     <td class="td_extra">
+  <% form_remote_tag(:html => {:id=>"remove_node_#{node.node_id}",
+         :action => { :action => "remove_node", :id => cluster.id}},
+         :url => url_for({ :action => "remove_node", :id => cluster.id}), 
+         :update => 'cluster_nodes') do  %>
+    <%= hidden_field_tag( "node", node.node_id) %>
+    <%= image_submit_tag "/images/silk/delete.png", { :confirm => "Are you sure you want to remove '#{node.fn_prefix}' from the cluster?", :title => "Remove" } %>
+  <% end %>
+  </td>
+  <% end %>
+</tr>
+<% end %>
+</table>
+
+<% permitted_to? :add_node, :cluster do %>
+<p>
+  <% form_remote_tag(:html => {:id=>"add_node_to_cluster",
+         :action => { :action => "add_node", :id => cluster.id}},
+         :url => url_for({ :action => "add_node", :id => cluster.id}), 
+         :update => 'cluster_nodes') do  %>
+    <%= collection_select(:node, :node_id, Node.find_all_active, :node_id, :fn_prefix) %>
+    <%= submit_tag "Add Node" %>
+  <% end %>
+  </p>
+<%end %>
+
+
+</div>
+

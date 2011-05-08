@@ -1,0 +1,10 @@
+<% set_html_title "Create New Machine" %>
+<h1>New Machine</h1>
+
+<% form_for(:machine, @machine, :url => {:action => 'create'}) do |f| %>
+  <%= render :partial => 'edit', :locals => {:f => f } %> 
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+
+<%= link_to 'cancel', :action => 'list' %>

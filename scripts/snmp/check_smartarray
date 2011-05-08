@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# Michael Vallaly (Dec '07) Ver 1.0
+
+# Description:
+#
+# This plugin checks hardware status for Smart Array Controllers,
+# using the HP Array Configuration Utility CLI.
+#
+# Usage: ./check_smartarray -S <slot_number> -P/-L 
+#
+#  Options:
+#
+#  -S                   = Controller SLOT number
+#  -P or -L             = Check type (physical/logical)
+#
+#
+# If we don't run as root add this line to /etc/sudoers :
+# -------------------------------------------------------
+# nagios      ALL=NOPASSWD: /usr/sbin/hpacucli
+#
+#
+# Examples:
+#
+#   ./check_smartarray -S 3 -L
+# RAID OK:  Smart Array 6i in Slot 0 array A logicaldrive 1 (67.8 GB, 1+0, OK)
+#
+# Another Examples:
+#
+# RAID CRITITICAL - HP Smart Array Failed:  Smart Array 6i in Slot 0 array \
+#          A (failed) logicaldrive 1 (67.8 GB, 1+0, Interim Recovery Mode)
+#
+# RAID WARNING - HP Smart Array Rebuild:  Smart Array 6i in Slot 0 array \
+#           A logicaldrive 1 (67.8 GB, 1+0, Rebuilding)
+#
+#
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+CLI_BINARY="/opt/compaq/hpacucli/bld/hpacucli"
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+if [ $# -lt 2 ]; then
+    echo "RAID UNKNOWN - Required Parameters Missing!" 
+    exit $STATE_UNKNOWN
+fi
+
+if [ ! -e $CLI_BINARY ]; then
+	echo "RAID UNKNOWN - HP Array Utility CLI not found"
+	exit $STATE_UNKNOWN
+fi
+
+usage="Usage: ./check_smartarray -S <slot_number> -P or -L" 
+
+while getopts "PLS:" options; do
+  case $options in
+    S ) slot=$OPTARG;;
+    P ) check_type="physicaldrive";;
+    L ) check_type="logicaldrive";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+  cli_output=`$CLI_BINARY controller slot=$slot $check_type all show 2>&1`
+  cli_status=$?
+
+
+  if [ $cli_status -eq 0 ]; then
+
+	if echo ${cli_output} | egrep Failed >/dev/null; then
+
+	   if [ "$check_type" == "physicaldrive" ]; then
+	      nagios_status=`echo "$cli_output" |grep physicaldrive |grep -v OK |awk -F "," '{print $1 " " $4}' |tr -d "()" | awk -F " " '{print " - Drive " $2 " " $6 }'`
+	      echo "DISK CRITICAL"${nagios_status} 
+	      exit $STATE_CRITICAL
+	   else
+	      nagios_status=`echo "$cli_output" |grep logicaldrive | tr -d "()" | awk -F " " '{print " -- Logical Array " $2 " " $7 " " $8 }'` 
+              if echo ${nagios_status} | egrep OK >/dev/null; then
+                echo "ARRAY DEGRADED"${nagios_status}
+                exit $STATE_WARNING
+	      elif echo ${cli_output} |grep Recovering >/dev/null; then
+		echo "ARRAY REBUILDING"${nagios_status}
+                exit $STATE_WARNING
+	      else
+                echo "ARRAY CRITICAL"${nagios_status}
+                exit $STATE_CRITICAL
+	      fi
+	   fi
+  
+	 else
+
+	   if [ "$check_type" == "physicaldrive" ]; then
+              echo "RAID OK - Physical Drives Functioning Properly"
+              exit $STATE_OK
+	   else
+	      echo "RAID OK - Logical Arrays Functioning Properly"
+	      exit $STATE_OK
+	   fi
+
+         fi
+
+  else
+    echo "RAID UNKNOWN - CLI Utility did not execute properly : "${cli_output}
+    exit $STATE_UNKNOWN
+
+  fi
+

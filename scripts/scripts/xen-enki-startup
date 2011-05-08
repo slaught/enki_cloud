@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# This script handles the DomU Node/Network configuration at startup.
+
+# Michael Vallaly (April '09) Ver 3.2
+
+# Ex.  root=/dev/sda1 ro iface20=192.168.20.50:255.255.255.0:192.168.20.1 \
+#	iface4000=172.16.0.50:255.255.254.0: hostname=aa50.example.com \
+#	cfg_pull=user@10.10.10.11:/some/path 
+
+DOMU_DFLT_NAME="eth"
+IP_BIN="/bin/ip"
+ETHTOOL_BIN="/usr/sbin/ethtool"
+
+#############################################################################################################################################################
+
+IFACE_COUNT=0
+
+# Remove any previous local configss
+rm -f /etc/enki/configs/cfg_override_pull
+
+echo -n "XEN: Update node configuration from passed kernel arguments.. "
+
+# Loop through our boot parameters
+
+for option in $(cat /proc/cmdline); do
+
+        case $option in
+	iface*)
+	    if [ "${IFACE_COUNT}" -eq "0" ]; then cat /etc/enki/templates/base-iface > /etc/network/interfaces ; fi
+            if $IP_BIN link show ${DOMU_DFLT_NAME}${IFACE_COUNT} &> /dev/null; then
+              ifacenum=`echo $option |cut -f1 -d '=' | tr -d '[:alpha:]'`
+              
+	      if [ "${ifacenum}" -eq "${IFACE_COUNT}" ]; then
+                interface="${DOMU_DFLT_NAME}${IFACE_COUNT}"
+	      else
+	        $IP_BIN link set ${DOMU_DFLT_NAME}${IFACE_COUNT} down &> /dev/null
+		$IP_BIN link set ${DOMU_DFLT_NAME}${IFACE_COUNT} name ${DOMU_DFLT_NAME}${ifacenum} &> /dev/null
+		interface="${DOMU_DFLT_NAME}${ifacenum}"
+	        $IP_BIN link set ${interface} up &> /dev/null
+	      fi
+
+              ip=`echo $option |cut -d '=' -f2| cut -d ':' -f1`
+              netmask=`echo $option |cut -d '=' -f2| cut -d ':' -f2`
+              gateway=`echo $option |cut -d '=' -f2| cut -d ':' -f3`
+
+              # Enable the interface
+              sed -i -e "/^auto/s/$/ $interface/" /etc/network/interfaces
+
+	      # Configure the interface
+	      case "${ip}" in 
+		[Dd][Hh][Cc][Pp]) 
+			# Enable DHCP interface
+			echo -e "# Xen Generated DHCP Interface for ${interface}\niface ${interface} inet dhcp\n" >> /etc/network/interfaces ;;
+		*) 		
+			# Enable the static interface
+			sed -e "s/%INTERFACE%/${interface}/g" -e "s/%ADDRESS%/${ip}/g" -e "s/%NETMASK%/${netmask}/g" /etc/enki/templates/eth-iface >> /etc/network/interfaces
+
+	      		# Setup the gateway 
+              		if [ "${gateway}x" != "x" ]; then echo -e "gateway ${gateway}\n" >> /etc/network/interfaces; fi ;;
+	      esac
+
+	      # Management interface 
+              if [ "${ifacenum}" -eq "4000" ]; then 
+	        echo -e "post-up /etc/enki/scripts/enki-mgmt-interface\npre-down /etc/enki/scripts/enki-mgmt-interface\n" >> /etc/network/interfaces
+	      fi
+	    
+	    else
+	      echo "Error interface ${DOMU_DFLT_NAME}${IFACE_COUNT} not found!.. "
+	    fi
+            IFACE_COUNT=$(($IFACE_COUNT + 1))
+	    ;;
+        ip*)
+            if [ $IFACE_COUNT -eq 0 ]; then cat /etc/enki/templates/base-iface > /etc/network/interfaces ; fi
+            interface=eth`echo $option |cut -f1 -d '=' | tr -d '[:alpha:]'`
+            ip=`echo $option |cut -d '=' -f2| cut -d ':' -f1`
+            netmask=`echo $option |cut -d '=' -f2| cut -d ':' -f2`
+            gateway=`echo $option |cut -d '=' -f2| cut -d ':' -f3`
+            sed -i -e "/^auto/s/$/ ${interface}/" /etc/network/interfaces
+            sed -e "s/%INTERFACE%/${interface}/g" -e "s/%ADDRESS%/${ip}/g" -e "s/%NETMASK%/${netmask}/g" /etc/enki/templates/eth-iface >> /etc/network/interfaces
+            if [ "${gateway}" != "" ]; then echo -e "gateway ${gateway}\n" >> /etc/network/interfaces; else echo -e "\n"  >> /etc/network/interfaces; fi
+            IFACE_COUNT=$(($IFACE_COUNT + 1))
+            ;;
+        fqdn=*)
+            fqdn_hostname=`echo $option |cut -d '=' -f2`
+            echo $fqdn_hostname > /etc/hostname
+            sed -i -e "s/%HOSTNAME%/${fqdn_hostname}/g" /etc/network/interfaces
+	    if [ -e /etc/hosts ]; then
+              sed -i -e "/^127.0.0.1/c\\127.0.0.1 ${fqdn_hostname} `echo ${fqdn_hostname} |cut -d '.' -f1` localhost" /etc/hosts
+	    else
+	      echo "127.0.0.1 ${fqdn_hostname} `echo ${fqdn_hostname} |cut -d '.' -f1` localhost" > /etc/hosts
+	    fi
+            ;;
+        cfg_pull=*)
+	    echo $option |cut -d '=' -f2 > /etc/enki/configs/cfg_override_pull
+            ;;
+        esac
+done
+echo "Done."
+
+echo "Disabling TCP Checksum offloading.."
+for iface in `$IP_BIN -o link |grep -we "link/ether" |cut -d ':' -f2 |tr -d '\n'`; do
+  $ETHTOOL_BIN -K ${iface} tx off
+done
+
+echo "Restarting Networking..."
+/etc/init.d/hostname.sh start
+/etc/init.d/networking restart
+
+echo "Configuring OpenSSH..."
+/usr/sbin/dpkg-reconfigure -plow openssh-server
+
+# Check if we have an override file
+if [ -e /etc/enki/configs/cfg_override_pull ]; then
+  echo "Processing configuration override..."
+
+  # Pull in any custom configs
+  PULL_CONFIG=`cat /etc/enki/configs/cfg_override_pull`
+  if [[ $PULL_CONFIG != "" ]]; then
+    echo "Pulling Custom Configuration files..."
+
+    if [ -x /etc/enki/scripts/enki_pull_cfg ]; then
+      /etc/enki/scripts/enki_pull_cfg -m $PULL_CONFIG
+    else
+      echo "Configuration Override Unavailable!"
+      rm -rf /etc/enki/overrides
+    fi
+  fi
+
+else
+  
+  # Get rid of the override directory
+  rm -rf /etc/enki/overrides
+
+fi

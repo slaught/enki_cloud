@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# This script outputs the InServ Volumename for a given block device on a 3par array
+# Designed for use with the Kernel DM-Multipather targets 
+
+# Micahael Vallaly Ver 1.2 (Oct 2010)
+
+AWK_BIN="/usr/bin/awk"
+GREP_BIN="/bin/grep"
+HEAD_BIN="/usr/bin/head"
+PING_BIN="/bin/ping"
+SCSI_ID_BIN="/lib/udev/scsi_id"
+SSH_BIN="/usr/bin/ssh"
+SED_BIN="/bin/sed"
+
+CONNECTION_TIMEOUT=15
+INSERV_IP="172.16.1.2"
+INSERV_USER="pvn_auto"
+INSERV_KEY="/etc/enki/keys/inserv_wwn.key"
+
+#########################################################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to query block devices!" >&2
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $AWK_BIN $GREP_BIN $HEAD_BIN $PING_BIN $SCSI_ID_BIN $SED_BIN $SSH_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.." >&2
+    exit 1
+  fi
+done
+
+# Check for needed commandline arguments
+if [ $# -lt 1 ]; then
+  echo "$0 <kernel block device>" >&2
+  exit 1
+fi
+
+# GLOBALS
+KERNEL_DEV=$1
+# FIXME
+SSH_OPTS="-p 2222 -n -i ${INSERV_KEY} -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o ConnectTimeout=${CONNECTION_TIMEOUT}"
+WWN_CALLOUT_CMD="showvlun -t -lvw"
+
+if [ ! -e ${KERNEL_DEV} ]; then
+  echo "Error: Device (${KERNEL_DEV}) doesn't exist!" >&2
+  exit 1
+fi
+
+# Get the SCSI WWN for the device
+BLOCK_WWN=`$SCSI_ID_BIN -g -u -s ${KERNEL_DEV} |$SED_BIN -e 's/^.//g' |tr -t '[:lower:]' '[:upper:]'`
+
+# Check InServ Reachability
+if ! $PING_BIN ${INSERV_IP} -qn -c 1 -w $CONNECTION_TIMEOUT &> /dev/null; then
+  echo "Error: Connectivity to InServ failed! Using WWN instead.." >&2
+  echo "${BLOCK_WWN}"
+  exit 0
+fi
+
+# Check that we can load our key
+if [ ! -r $INSERV_KEY ]; then
+  echo "Error: Can not open the key file (${INSERV_KEY})! Using WWN instead.." >&2
+  exit 0
+fi
+
+# Get the WWNs for all 3par LUNs
+cli_output=`$SSH_BIN ${SSH_OPTS} ${INSERV_USER}@${INSERV_IP} ${WWN_CALLOUT_CMD} 2> /dev/null`
+if [ $? -ne 0 ]; then
+  echo "Error: InServ remote command failed! Using WWN instead.." >&2
+  echo "${BLOCK_WWN}"
+  exit 0
+fi
+
+# Generate the volume label
+volume_label=`echo "$cli_output" |$GREP_BIN -e " ${BLOCK_WWN} " |$HEAD_BIN -1 |$AWK_BIN '{print $2}'`
+
+# Print the output
+if [[ "$volume_label" == "" ]]; then
+  echo "${BLOCK_WWN}"
+else
+  echo "${volume_label}" 
+fi
+
+exit 0
+

@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# Check a domains DNS servers 
+
+# Michael Vallaly Sept '10 - Ver 1.0
+
+DIG_BIN="/usr/bin/dig"
+SED_BIN="/bin/sed"
+TAIL_BIN="/usr/bin/tail"
+
+###################################################
+
+# Set our Nagios States
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+# Gobal Counters
+CRIT_COUNT=0
+
+# Check for script dependencies
+for bindep in $DIG_BIN $SED_BIN $TAIL_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+# Print some usage
+usage="Usage: -D <FQDN> [-s <server> ] [-t <timeout>]"
+
+while getopts "D:t:s:" options; do
+  case $options in
+    D ) DOMAIN="$OPTARG";;
+    s ) SERVER="$OPTARG";;
+    t ) timeout="+time=$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ -z $DOMAIN ]; then
+    echo $usage
+    exit 1
+fi
+
+if [ ! -z $SERVER ]; then
+  SERVER="@${SERVER}"
+fi
+
+# Set the default parameters
+DIG_OPTS="-4 +short +fail +tries=1 +retry=0 ${timeout}"
+
+# Attempt to dig the domain
+dig_output=`$DIG_BIN -q ${DOMAIN} -t NS ${DIG_OPTS} ${SERVER} 2> /dev/null |$SED_BIN -e 's!.$!!'`
+dig_status=$?
+
+
+# Check dig exit status
+if [ $dig_status -eq 9 ]; then
+  echo "CRITICAL - Connection timed out, no nameserver could be reached to query for ${DOMAIN}!"
+  exit $STATE_CRITICAL
+elif [ $dig_status -ne 0 ]; then
+  echo "CRITICAL - DNS DIG Internal Error (`echo "$dig_output" |$TAIL_BIN -1`)"
+  exit $STATE_CRITICAL
+fi
+
+# Make sure dig was able to process the request or complain loudly
+ns_count=`echo "$dig_output" |wc -l`
+if [ $ns_count -lt 1 ]; then
+  echo "CRITICAL - Nameserver lookup for (${DOMAIN}) failed!"
+  exit $STATE_CRITICAL
+fi
+
+# Iterate over each nameserver
+for nameserver in $dig_output; do 
+
+  # Attempt to get an A record from each nameserver
+  ns_output=`$DIG_BIN -q ${DOMAIN} -t A ${DIG_OPTS} @${nameserver} 2> /dev/null`
+
+  if [ "${ns_output}x" == "x" ]; then
+     let CRIT_COUNT+=1 
+     DIG_STATUS_MSG+="${nameserver} "
+  fi
+
+done
+
+# Reporting Logic
+if [ $CRIT_COUNT -gt 0 ]; then
+   echo "CRITICAL - Nameserver ( ${DIG_STATUS_MSG}) does not respond to DNS requests for ${DOMAIN}!"
+   exit $STATE_CRITICAL
+else
+   echo "OK - ${ns_count} authoritative nameserver(s) responded for $DOMAIN"
+   exit $STATE_OK
+fi
+

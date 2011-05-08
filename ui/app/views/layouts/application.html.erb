@@ -1,0 +1,58 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+       "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=UTF-8" />
+  <title><%= (html_title = yield :html_title) ? html_title : '' %>IT CFG Database</title>
+  <!-- <title>Cnu Config</title> -->
+  <% #stylesheet_link_tag "cnu_it" %>
+  <%= stylesheet_link_tag "cnu_it_new" %>
+  <%= stylesheet_link_tag "menu" %>
+  <%= stylesheet_link_tag "pagination" %>
+  <% #stylesheet_link_tag "jquery.flexbox" %>
+
+  <%= javascript_include_tag "sorttable" %>
+  <%= javascript_include_tag "prototype" %>
+  <%= javascript_include_tag "effects" %>
+  <%= javascript_include_tag "controls" %>
+  <%= javascript_include_tag "dragdrop" %>
+
+  <%= javascript_include_tag "/js/jquery-1.3.2.min.js" %>
+  <%= javascript_include_tag "/js/jquery-ui-1.7.2.custom.min.js" %>
+      <%= javascript_include_tag "raphael-min" %>
+      <%= javascript_include_tag "cufon-yui" %>
+      <%= javascript_include_tag "04b21_400.font" %>
+      <%= javascript_include_tag "topfunky-sparkline" %>
+  <%= javascript_include_tag "application" %>
+
+</head>
+<body>
+  <div id="header">
+    <a name="top"></a>
+    <%= render :partial => 'users/user_bar' %>
+    <h1 id="app_title"><%= link_to "IT CFG Database", :controller => "welcome" %><% if ENV['RAILS_ENV'] != "production" %><span style="color: #f00">DEVELOPMENT!</span><% end %></h1>
+  </div>
+  <%= render :partial => 'users/user_nav' %>
+  <div id="app_content">
+  <% if flash[:notice] %>
+    <div class="flash_notice flash"><%= flash[:notice] %></div>
+  <% end %>
+  <% if flash[:warning] %>
+    <div class="flash_warning flash"><%= flash[:warning] %></div>
+  <% end %>
+  <% if flash[:error] %>
+    <div class="flash_error flash"><%= flash[:error] %></div>
+  <% end %>
+  <% if flash[:system_warning] %>
+    <div class="system_warning flash"><%= flash[:system_warning] %></div>
+  <% end %>
+  <%= yield %>
+  </div>
+  <div id="footer">
+    <ul>
+      <li><%= link_to "Home", :controller => "welcome" %></li>
+      <li><a href="#top">Top</a></li>
+    </ul>
+  </div>
+</body>
+</html>

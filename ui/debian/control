@@ -1,0 +1,14 @@
+Source: cnu-it-cfg-web
+Section: experimental
+Priority: extra
+Maintainer: CNU Builder (control) <cslaughter@example.com>
+Build-Depends: debhelper (>= 5), cdbs, ruby1.8, devscripts
+Standards-Version: 3.7.2
+
+Package: cnu-it-cfg-web
+Priority: extra
+Section: devel
+Architecture: any
+Depends: ruby1.8 (>= 1.8.6), ruby, irb, libpgsql-ruby1.8, libdbd-pg-ruby, libopenssl-ruby1.8, openssl, openssl-blacklist, ssl-cert, rsync, pacemaker (>= 1.0.8+CNU), cluster-agents (>= 1:1.0+CNU), adduser, git-core, md5deep, libldap-ruby1.8, nginx
+Recommends: ipvsadm, redis-server
+Description: CNU IT Configuration Database web interface

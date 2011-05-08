@@ -1,0 +1,396 @@
+#!/bin/bash
+
+# This script enables LVS direct routing for multiple clusters 
+
+# Michael Vallaly Ver 5.0 (Oct '10)
+
+LB_SERVICES_CONFIG="/etc/enki/configs/node/lb.services"
+NET_SERVICES_CONFIG="/etc/enki/configs/node/net.services"
+
+AWK_BIN="/usr/bin/awk"
+GREP_BIN="/bin/grep"
+IPTABLES_BIN="/sbin/iptables"
+IPTABLES_RESTORE_BIN="${IPTABLES_BIN}-restore"
+IP_BIN="/sbin/ip"
+MODPROBE_BIN="/sbin/modprobe"
+LSMOD_BIN="/bin/lsmod"
+SORT_BIN="/usr/bin/sort"
+IPCALC_BIN="/usr/bin/ipcalc"
+LVS_CONNECTION_SYNC_BIN="/etc/enki/scripts/lvs-connection-sync"
+
+TUN_IFACE="tunl0"
+TUN_IP="169.254.254.254/32"
+TUN_MTU="1460"
+
+SPINNER_MOD="15"
+
+#################################################################################################
+
+# GLOBALS
+ROT=0
+LOOP_NUM=0
+RT_NUM=1
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser permissions required to configure LVS!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $AWK_BIN $GREP_BIN $SORT_BIN $IP_BIN $IPCALC_BIN $MODPROBE_BIN $LSMOD_BIN $IPTABLES_BIN $IPTABLES_RESTORE_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Progress Spinner
+spinner() {
+  local SPIN
+  case "$ROT" in
+        0)
+          SPIN=\-
+          ROT=1
+          ;;
+        1)
+          SPIN=\\
+          ROT=2
+          ;;
+        2)
+          SPIN=\|
+          ROT=3
+          ;;
+        3)
+          SPIN=\/
+          ROT=0
+          ;;
+        esac
+  echo -e "\b\b\b\b\b (${SPIN}) \c "
+  return
+}
+
+destroy_lvs_mangle () {
+
+  # Remove netfilter rules
+  $IPTABLES_BIN -t mangle -D PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t mangle -D POSTROUTING -j LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t mangle -F LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t mangle -X LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t mangle -F LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t mangle -X LVS_POST 2> /dev/null
+
+  $IPTABLES_BIN -t filter -D INPUT -j LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t filter -F LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t filter -X LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t filter -D OUTPUT -j LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t filter -F LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t filter -X LVS_OUT 2> /dev/null
+
+  $IPTABLES_BIN -t nat -D PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -D OUTPUT -j LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t nat -F LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -X LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -F LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t nat -X LVS_OUT 2> /dev/null
+
+  # Remove IP rules
+  while read PRIO RULE; do
+    $IP_BIN rule del prio ${PRIO%%:*} $RULE
+  done < <($IP_BIN rule show |$GREP_BIN -Ev '^(0|32766|32767):')
+
+  # Remove IP routes
+  while read ROUTE; do
+    $IP_BIN route del $ROUTE
+  done < <($IP_BIN route show table all |$GREP_BIN -e ' table [[:digit:]]\{1,\}[[:space:]]*$')
+
+}
+
+enable_policy_route () {
+
+local iface=$1
+local fwm=$2
+local gateway
+local policy_route
+local rt_num
+
+  # Ensure we use the correct interface for local response traffic
+  gateway="`$IPCALC_BIN $($IP_BIN route show |$GREP_BIN ${iface} |head -1 |$AWK_BIN '{print $1}') |$GREP_BIN -e "^HostMin: " |$AWK_BIN '{print $2}'`"
+  policy_route="$IP_BIN route add default via ${gateway} dev ${iface} table"
+  rt_num=`$GREP_BIN -e "^\${policy_route} " ${LVS_BATCHFILE}_route |$AWK_BIN '{print $10}'`
+  if [ "${rt_num}x" == "x" ]; then
+    rt_num=${RT_NUM}
+    RT_NUM=$(( $RT_NUM + 1 ))
+    echo "${policy_route} ${rt_num}" >> ${LVS_BATCHFILE}_route
+  fi
+  echo "$IP_BIN rule add fwmark ${fwm} lookup ${rt_num}" >> ${LVS_BATCHFILE}_route
+
+}
+
+# Handle Stopping
+if [ "`echo $1 |$GREP_BIN -ic 'stop'`" -ne 0 ]; then
+  echo -n "Stopping LVS Support.. "
+  destroy_lvs_mangle
+  echo "Done."
+  exit 0
+fi
+
+# Check for local environment configuration 
+if [ ! -e $LB_SERVICES_CONFIG ]; then
+  echo "Can not find load balancer configuration (${LB_SERVICES_CONFIG})!"
+  echo " *** ERROR ***"
+  echo "##############################################"
+  echo "#         LVS Services are DISABLED!         #"
+  echo "##############################################"
+  echo " *** ERROR ***"
+  exit 1
+else
+  # Pull in our LVS configuration
+  . $LB_SERVICES_CONFIG 
+fi
+
+# Generate the Netfilter Batchfile
+LVS_BATCHFILE="/dev/shm/.netfilter-lvs-$$"
+if ! touch ${LVS_BATCHFILE}_mangle_pre ${LVS_BATCHFILE}_mangle_post ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_filter_out ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out ${LVS_BATCHFILE}_route; then
+  echo "Unable to write batchfile ($LVS_BATCHFILE).. Exiting!"
+  exit 1
+else
+  echo "*mangle" >> ${LVS_BATCHFILE}_mangle_pre
+  echo "*mangle" >> ${LVS_BATCHFILE}_mangle_post
+  echo "*filter" >> ${LVS_BATCHFILE}_filter_in
+  echo "*filter" >> ${LVS_BATCHFILE}_filter_out
+  echo "*nat" >> ${LVS_BATCHFILE}_nat_pre
+  echo "*nat" >> ${LVS_BATCHFILE}_nat_out
+  trap "{ rm -f ${LVS_BATCHFILE}_mangle_pre ${LVS_BATCHFILE}_mangle_post ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_filter_out ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out ${LVS_BATCHFILE}_route; }" EXIT
+fi
+
+# Check for network services configuration
+if [ ! -e "$NET_SERVICES_CONFIG" ]; then
+  echo "Can not find network service configuration (${NET_SERVICES_CONFIG})!"
+  echo " *** WARNING ***"
+  echo "##############################################"
+  echo "#       Downpage Support is DISABLED!        #"
+  echo "##############################################"
+  echo " *** WARNING ***"
+else
+  # Load network service configuration
+  . $NET_SERVICES_CONFIG
+
+  echo -n "Generating LVS Downpage rules...     "
+  for line in ${NET_SERVICES[*]}; do
+
+    # Update counter and spinner
+    ((LOOP_NUM++))
+    if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+      spinner
+    fi
+
+    # Parse line from configuration file array
+    ext_ip=`echo $line |cut -s -d: -f1`
+    ext_port=`echo $line |cut -s -d: -f2`
+    protocol=`echo $line |cut -s -d: -f3`
+    local_port=`echo $line |cut -s -d: -f4`
+
+    # Skip all the non-HA services
+    if [ "$ext_ip" == "" -o "$ext_port" == "" ]; then
+      continue
+    fi
+
+  # Redirect traffic for HA services to localhost
+    echo "-A LVS_PRE -p ${protocol} -d ${ext_ip} --dport ${ext_port} -j REDIRECT --to-ports ${local_port}" >> ${LVS_BATCHFILE}_nat_pre  	# External Service Redirect
+    echo "-A LVS_OUT -p ${protocol} -d ${ext_ip} --dport ${ext_port} -j REDIRECT --to-ports ${local_port}" >> ${LVS_BATCHFILE}_nat_out   	# Local Service Redirect
+
+  done
+  echo -en "\b\b\b\b\b Done.\n"
+fi
+
+# Setup load balanced and port forwarded services
+echo -n "Generating LVS HA service rules...     "
+for service in ${LVS_MANGLE_SERVICES[*]} ${PORTFW_MANGLE_SERVICES[*]}; do
+
+ # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Split out values
+  service_mark=`echo $service |cut -s -d: -f1`
+  iface=`echo $service |cut -s -d: -f2`
+  ip=`echo $service |cut -s -d: -f3`
+  port=`echo $service |cut -s -d: -f4`
+  proto=`echo $service |cut -s -d: -f5`
+  portfw_ip=`echo $service |cut -s -d: -f6`
+
+  # Mark incoming HA packets on External and Tunnel interfaces
+  echo "-A LVS_PRE -i ${iface} -d ${ip} -p ${proto} --dport ${port} -j MARK --set-mark ${service_mark}" >> ${LVS_BATCHFILE}_mangle_pre		# Mark External Traffic
+  echo "-A LVS_PRE -i ${TUN_IFACE} -d ${ip} -p ${proto} --dport ${port} -j MARK --set-mark ${service_mark}" >> ${LVS_BATCHFILE}_mangle_pre	# Mark Tunnel Traffic
+
+  # Add our interface
+  lb_marks=`echo -e "${lb_marks}\n ${service_mark}:${proto}:${portfw_ip}"`
+  lb_ifaces=`echo -e "${lb_ifaces}\n ${iface}"`
+
+done
+
+# Loop over each unique fwmark of our services
+for mark in `echo "$lb_marks" |$SORT_BIN -t: -k1,1 -u`; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Split out values
+  service_mark=`echo $mark |cut -s -d: -f1`
+  proto=`echo $mark |cut -s -d: -f2`
+  portfw_ip=`echo $mark |cut -s -d: -f3`
+
+  # Accept and locally process LB traffic which doesn't get picked up by IPVS (downpage support)
+  if [ "${portfw_ip}x" == "x" ]; then
+    echo "-A LVS_IN -m mark --mark ${service_mark} -j ACCEPT" >> ${LVS_BATCHFILE}_filter_in							# Accept LB Traffic
+  else
+
+    # Reject port forwarded traffic which doesn't get picked up by IPVS
+    if [ `echo $proto |$GREP_BIN -i "tcp" -c` -eq 1 ]; then
+      # Reject TCP connections
+      echo "-A LVS_IN -m mark --mark ${service_mark} -p tcp -j REJECT --reject-with tcp-reset" >> ${LVS_BATCHFILE}_filter_in			# Reject PF Traffic
+    else
+      # Reject everything else
+      echo "-A LVS_IN -m mark --mark ${service_mark} ! -p tcp -j REJECT --reject-with icmp-port-unreachable" >> ${LVS_BATCHFILE}_filter_in	# Reject PF Traffic
+    fi
+
+  fi
+
+done
+
+# Loop over each unique HA interface
+TUN_MSS=$((${TUN_MTU} - 20))
+FM_NUM=1
+for iface in `echo "$lb_ifaces" |$SORT_BIN -u`; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+ 
+  # Enable policy route 
+  iface_network=`$IP_BIN route show dev ${iface} scope link |$AWK_BIN '{print $1}'`
+  echo "-A LVS_OUT -m conntrack --ctstate ESTABLISHED,RELATED --ctorigdst ${iface_network} -j MARK --set-mark ${FM_NUM}" >> ${LVS_BATCHFILE}_filter_out
+  enable_policy_route ${iface} ${FM_NUM}
+  FM_NUM=$(( $FM_NUM + 1 ))
+
+  # Allow ICMP (debug) and Clamp MTU of outbound packets
+  echo "-A LVS_IN -i ${iface} -p icmp --icmp-type echo-request -j ACCEPT" >> ${LVS_BATCHFILE}_filter_in						# Enable ICMP Requests
+  echo "-A LVS_POST -o ${iface} -p tcp -m tcp --tcp-flags SYN,RST,ACK SYN,ACK -m tcpmss --mss ${TUN_MSS}:1500 -j TCPMSS --set-mss ${TUN_MSS}" >> ${LVS_BATCHFILE}_mangle_post # Clamp Local Response MTU
+
+done
+echo -en "\b\b\b\b\b Done.\n"
+
+# Enable Tunel Interfaces for HA services
+echo -n "Enabling Intra-LB HA routing...     "
+
+tunnel_status=0
+# Load the ipip network module if it isn't loaded already
+if ! $LSMOD_BIN |$GREP_BIN -qe '^ipip'; then
+  if ! $MODPROBE_BIN ipip; then
+    echo -e "\b\b\b\b\b Tunnel kernel module not loaded! Aborting.."
+    ((tunnel_status++))
+  fi
+fi
+
+# Bring up the tun interface
+$IP_BIN addr flush dev $TUN_IFACE 2> /dev/null
+if ! $IP_BIN link set $TUN_IFACE mtu $TUN_MTU up; then
+  echo -e "\b\b\b\b\b Tunnel interface won't come up! Aborting.."
+  ((tunnel_status++))
+fi
+
+# Configure the tunnel to accept traffic for HA IPs
+$IP_BIN addr add ${TUN_IP} dev ${TUN_IFACE} 
+
+# Make sure we ARP locally only on our tunnel interface 
+echo 1 > /proc/sys/net/ipv4/conf/${TUN_IFACE}/arp_ignore
+
+# Decrement the TTL on tunneled/routed packets to prevent rounting loops
+echo "-I LVS_PRE -i ${TUN_IFACE} -m ttl --ttl-eq 0 -j DROP" >> ${LVS_BATCHFILE}_mangle_pre   							# Drop packets with invalid TTLs (IPVS Loop prevention)
+echo "-I LVS_PRE -i ${TUN_IFACE} -m ttl --ttl-gt 0 -j TTL --ttl-dec 1" >> ${LVS_BATCHFILE}_mangle_pre      					# Decrement Tunnel Traffic TTL
+
+# HERE BE DRAGONS TODO
+$IPTABLES_BIN -t raw -F
+$IPTABLES_BIN -t raw -A PREROUTING -i vlan500 -p 4 -j NOTRACK
+$IPTABLES_BIN -t raw -A PREROUTING -i vlan500 -p udp -d 239.193.0.25 --dport 5405 -j NOTRACK
+$IPTABLES_BIN -t raw -A PREROUTING -i vlan500 -p udp -d 224.0.0.81 --dport 8848 -j NOTRACK
+#HERE BE DRAGONS TODO
+
+if [ $tunnel_status -ge 1 ]; then
+  echo "*** WARNING ***"
+  echo "##############################################"
+  echo "#       Intra-LB Routing is DISABLED!        #"
+  echo "##############################################"
+  echo " *** WARNING ***"
+else
+  echo -en "\b\b\b\b\b Done.\n"
+fi
+
+# Commit all the chains
+echo "COMMIT" >> ${LVS_BATCHFILE}_mangle_pre
+echo "COMMIT" >> ${LVS_BATCHFILE}_filter_in
+echo "COMMIT" >> ${LVS_BATCHFILE}_filter_out
+echo "COMMIT" >> ${LVS_BATCHFILE}_mangle_post
+echo "COMMIT" >> ${LVS_BATCHFILE}_nat_pre
+echo "COMMIT" >> ${LVS_BATCHFILE}_nat_out
+
+# Clear LVS Chains
+destroy_lvs_mangle
+
+# Create LVS Chains
+$IPTABLES_BIN -t mangle -N LVS_PRE
+$IPTABLES_BIN -t mangle -N LVS_POST
+$IPTABLES_BIN -t filter -N LVS_IN
+$IPTABLES_BIN -t filter -N LVS_OUT
+$IPTABLES_BIN -t nat -N LVS_PRE
+$IPTABLES_BIN -t nat -N LVS_OUT
+
+# Load route maps
+echo -en "Enabling Route Maps... "
+/bin/bash ${LVS_BATCHFILE}_route
+# Flush the routing cache
+$IP_BIN route flush cache
+echo "Done."
+
+# Generate some numbers
+DOWN_NUM=`cat ${LVS_BATCHFILE}_nat_pre |$GREP_BIN -e "-A " |wc -l`
+LVS_NUM=`cat ${LVS_BATCHFILE}_filter_in |$GREP_BIN -e "-A " |wc -l`
+
+# Bulkload Bogon Filters
+echo -n "Loading $DOWN_NUM LVS Downpages rules... "
+cat ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out |$IPTABLES_RESTORE_BIN -n
+load_status+=$?
+echo "Done."
+
+echo -n "Loading $LVS_NUM LVS HA service rules... "
+cat ${LVS_BATCHFILE}_mangle_pre ${LVS_BATCHFILE}_mangle_post |$IPTABLES_RESTORE_BIN -n
+load_status+=$?
+cat ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_filter_out |$IPTABLES_RESTORE_BIN -n
+load_status+=$?
+echo "Done."
+
+echo -n "Enabling LVS HA service rules... "
+if [ $load_status -ne 0 ]; then
+  echo "Problems applying LVS HA service rules.. Aborting!"
+  exit 1
+else
+  $IPTABLES_BIN -t mangle -A PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t mangle -A POSTROUTING -j LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t filter -A INPUT -j LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t filter -A OUTPUT -j LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t nat -A PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -A OUTPUT -j LVS_OUT 2> /dev/null
+  echo "Done."
+  # Enable LVS connection sync 
+  if [ -x ${LVS_CONNECTION_SYNC_BIN} ]; then
+    $LVS_CONNECTION_SYNC_BIN start
+  fi
+fi

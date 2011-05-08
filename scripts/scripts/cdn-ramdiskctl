@@ -1,0 +1,41 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          cdn-ramdiskctl
+# Required-Start:
+# Required-Stop:
+# Default-Start:     S
+# Default-Stop:
+# Short-Description: CDN ramdisk control interface
+# Description:       Used to enable/disable CDN ramdisks.
+### END INIT INFO
+
+# Starts up the ramdisks for all static content (CDN) docroots
+
+CDN_BASEPATH="/data/static_content"
+RAMDISK_BIN="/etc/enki/scripts/enki-ramdisk"
+FIND_BIN="/usr/bin/find"
+
+###############################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to alter CDN ramdisks!" >&2
+  exit 1
+fi
+
+if [ "${1}x" != "x" ]; then
+  ACTION=$1
+else
+  ACTION="restart"
+fi
+
+echo -ne "Processing CDN ramdisks..."
+
+# Loop over each docroot and create the ramdisks
+for docrootdir in `$FIND_BIN $CDN_BASEPATH -type d -name 'docroot'`; do
+  $RAMDISK_BIN $ACTION $docrootdir > /dev/null
+  echo -n "."
+done
+
+echo "Done."

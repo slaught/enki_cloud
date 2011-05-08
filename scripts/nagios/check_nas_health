@@ -1,0 +1,86 @@
+#!/bin/bash
+#
+# Description:
+#
+# This script checks the health of an Infrant Ready NAS.
+#
+# Usage: ./check_nas_health <NAS_IP>
+#
+# Examples:
+#
+# ./check_nas_health 10.32.0.10
+# NAS (OK)
+#
+# Another Examples:
+#
+# ./check_nas_health 10.32.0.10
+# NAS (Warning)
+#
+# ./check_nas_health 10.32.0.10
+# NAS (Critical)
+#
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+SNMPGET_BIN="/usr/bin/snmpget"
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+NAS_HEALTH_OID=".1.3.6.1.4.1.11500.1.2"
+
+if [ ! -e $SNMPGET_BIN ]; then
+        echo "SNMPGET ($SNMPGET_BIN) not found!"
+        exit $STATE_UNKNOWN
+fi
+
+usage="Usage: ./check_nas_health -a <NAS_IP>"
+
+while getopts "a:" options; do
+  case $options in
+    a ) ip="$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 2 ]; then
+    echo $usage
+    exit 1
+fi
+
+# Get the NAS Health
+
+  cli_output=`$SNMPGET_BIN -OnQ -c public -v2c $ip $NAS_HEALTH_OID |cut -d' ' -f3`
+  cli_status=$?
+
+if [ "$cli_status" -ge "1" ]; then
+   echo "SNMP GET FAILED!"
+   exit $STATE_UNKNOWN
+fi
+
+exit_status=0
+
+  if [ "$cli_output" == "3" ]; then
+    display="(OK)"
+  elif [ "$cli_output" == "2" ]; then
+    display="(Warning)"
+      exit_status=$STATE_WARNING
+  elif [ "$cli_output" == "1" ]; then
+    display="(Critical)"
+      exit_status=$STATE_CRITICAL
+  else
+    display="(Unknown)"
+      exit_status=$STATE_UNKNOWN
+  fi
+
+  output=`echo -e "NAS $display"` 
+
+echo $output
+exit $exit_status

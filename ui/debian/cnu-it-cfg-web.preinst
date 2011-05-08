@@ -1,0 +1,37 @@
+#!/bin/bash 
+
+# new-preinst install
+# new-preinst install old-version
+
+MAILSUBJ='IT Production Change' 
+
+if [ $HOSTNAME == 'haskell' ]; then
+MAILTO="itcfg+test@example.com"
+else
+MAILTO="production_pending@example.com"
+fi
+
+# echo preinst: $@, $1 $2 $3 , $# 
+# generate pending_change email
+case $1 in
+install)
+  MESG="pending new installation of cnu-it-cfg-web package"
+;;
+upgrade)
+  oldversion=$2
+  MESG="pending upgrade of cnu-it-cfg-web package from $oldversion"
+;;
+*) /bin/true ;;
+esac
+
+#
+if [ ${#MESG} -lt 1  ]; then
+  /bin/true
+else
+  DATE=`date`
+  WHO=${SUDO_USER:-$USER}
+  MSG="IT Production Change: $DATE 
+$WHO@$HOSTNAME : $MESG"
+  cat - <<<"$MSG" |  mail -a "From: cnu-it-cfg-web <itcfg@example.com>"  -s "$MAILSUBJ" $MAILTO 
+fi
+exit 0

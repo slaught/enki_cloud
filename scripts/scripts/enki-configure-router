@@ -1,0 +1,558 @@
+#!/bin/bash
+
+# This script enables advanced routing for node gateways
+
+# Michael Vallaly Ver 3.6 (Nov '10) 
+
+ROUTED_SERVICES_CONFIG="/etc/enki/configs/node/routed.services"
+
+AWK_BIN="/usr/bin/awk"
+BC_BIN="/usr/bin/bc"
+GREP_BIN="/bin/grep"
+IPCALC_BIN="/usr/bin/ipcalc"
+IPTABLES_BIN="/sbin/iptables"
+IPTABLES_RESTORE_BIN="${IPTABLES_BIN}-restore"
+IP_BIN="/bin/ip"
+SORT_BIN="/usr/bin/sort"
+
+SPINNER_MOD="2"
+
+#################################################################################################
+ 
+#TODO
+# Getting to the point we should be using ipsets
+# ORDER NAT MSF
+# sort -n -t . -k 1,1 -k 2,2 -k 3,3 -k 4,4
+# /proc/sys/net/ipv4/netfilter/*
+# http://www.dd-wrt.com/wiki/index.php/Router_Slowdown
+
+# GLOBALS
+ROT=0
+LOOP_NUM=0
+RT_NUM=1
+FM_NUM=1
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser permissions required to configure router!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $AWK_BIN $BC_BIN $GREP_BIN $IPCALC_BIN $IPTABLES_BIN $IPTABLES_RESTORE_BIN $IP_BIN $SORT_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Check Bash Version
+if [ "`echo "$(echo $BASH_VERSION |cut -d'.' -f1,2) < 3.2" |$BC_BIN`" -eq "1" ]; then
+  echo "This version of BASH ${BASH_VERSION} is too old and is unsupported. You should upgrade.."
+  exit 1
+fi
+
+# Progress Spinner
+spinner() {
+  local SPIN
+  case "$ROT" in
+        0)
+          SPIN=\-
+          ROT=1
+          ;;
+        1)
+          SPIN=\\
+          ROT=2
+          ;;
+        2)
+          SPIN=\|
+          ROT=3
+          ;;
+        3)
+          SPIN=\/
+          ROT=0
+          ;;
+        esac
+  echo -e "\b\b\b\b\b (${SPIN}) \c "
+  return
+}
+
+destroy_gate () {
+  
+  # Remove Mangle rules
+  $IPTABLES_BIN -t mangle -D PREROUTING -j GATE_MANGLE 2> /dev/null
+  $IPTABLES_BIN -t mangle -F GATE_MANGLE 2> /dev/null
+  $IPTABLES_BIN -t mangle -X GATE_MANGLE 2> /dev/null
+
+  # Remove Filter rules
+  $IPTABLES_BIN -t filter -D INPUT -j GATE_INPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -F GATE_INPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -X GATE_INPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -D FORWARD -j GATE_FORWARD 2> /dev/null
+  $IPTABLES_BIN -t filter -F GATE_FORWARD 2> /dev/null
+  $IPTABLES_BIN -t filter -X GATE_FORWARD 2> /dev/null
+  $IPTABLES_BIN -t filter -D OUTPUT -j GATE_OUTPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -F GATE_OUTPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -X GATE_OUTPUT 2> /dev/null
+
+  # Remove NAT rules
+  $IPTABLES_BIN -t nat -D PREROUTING -j GATE_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -F GATE_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -X GATE_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -D POSTROUTING -j GATE_POST 2> /dev/null
+  $IPTABLES_BIN -t nat -F GATE_POST 2> /dev/null
+  $IPTABLES_BIN -t nat -X GATE_POST 2> /dev/null
+
+  # Remove IP rules
+  while read PRIO RULE; do
+    $IP_BIN rule del prio ${PRIO%%:*} $RULE
+  done < <($IP_BIN rule show |$GREP_BIN -Ev '^(0|32766|32767):')
+
+  # Remove IP routes
+  while read ROUTE; do
+    $IP_BIN route del $ROUTE
+  done < <($IP_BIN route show table all |$GREP_BIN -e ' table [[:digit:]]\{1,\}[[:space:]]')
+
+  # Disable IP forwarding
+  echo "0" > /proc/sys/net/ipv4/ip_forward
+
+}
+
+implied_netmask () {
+
+  local ip 
+  local netmask
+
+  ip=`echo $1 |cut -d '/' -f1`
+  netmask=`echo $1 |cut -s -d '/' -f2`
+
+  if [ "${netmask}x" != "x" ]; then
+    if [[ $netmask -lt 0 ]] || [[ $netmask -gt 32 ]]; then
+      netmask="/32"
+    else
+      netmask="/${netmask}"
+    fi
+  else
+    if [ "${ip}" == "0.0.0.0" ]; then
+      netmask="/0"
+    fi
+  fi
+
+echo "${ip}${netmask}"
+
+}
+
+infer_interface () {
+  local interface
+  local route_output
+
+  local ip
+  local netmask
+
+  ip=`echo $1 |cut -d '/' -f1`
+  netmask=`echo $1 |cut -s -d '/' -f2`
+  
+  if [ "${netmask}x" != "x" ]; then
+    if [[ $netmask -lt 0 ]] || [[ $netmask -gt 32 ]]; then
+      netmask=""
+    else
+      netmask="/${netmask}"
+    fi
+  fi
+
+  route_output=`$IP_BIN route get ${ip}${netmask} 2>/dev/null |head -1`
+
+  if [ "${route_output}x" == "x" ]; then
+    return 1
+  elif [ $(echo "${route_output}" |$GREP_BIN -ce "^local ") -gt 0 ]; then
+    $IP_BIN addr show |$GREP_BIN -e "inet ${ip}" |$AWK_BIN '{print $NF}'
+  elif [  $(echo "${route_output}" |$GREP_BIN -ce "^${ip} via") -gt 0 ]; then
+    echo $route_output |$AWK_BIN '{print $5}'
+  elif [  $(echo "${route_output}" |$GREP_BIN -ce "^${ip} dev") -gt 0 ]; then
+    echo $route_output |$AWK_BIN '{print $3}'
+  else 
+    echo $route_output |$AWK_BIN '{print $4}'
+  fi
+
+  return 0
+}
+
+enable_policy_route () {
+
+local iface=$1
+local fwm=$2
+local src_iface
+local network
+local gateway
+local gateway_route
+local network_route
+local rt_num
+
+  if [ "${3}x" != "x" ]; then 
+    src_iface=" iif ${3}"
+  else
+    src_iface=""
+  fi
+
+  # Ensure we use the correct interface for local response traffic
+  network="`$IP_BIN route show dev ${iface} scope link |head -1 |$AWK_BIN '{print $1}'`"
+  gateway="`$IPCALC_BIN ${network} |$GREP_BIN -e "^HostMin: " |$AWK_BIN '{print $2}'`"
+  gateway_route="$IP_BIN route add default via ${gateway} dev ${iface} table"
+  network_route="$IP_BIN route add ${network} dev ${iface} table"
+  rt_num=`$GREP_BIN -e "^\${gateway_route} " ${NAT_BATCHFILE}_ip |$AWK_BIN '{print $10}'`
+  if [ "${rt_num}x" == "x" ]; then
+    rt_num=${RT_NUM}
+    RT_NUM=$(( $RT_NUM + 1 ))
+    echo "${network_route} ${rt_num}" >> ${NAT_BATCHFILE}_ip
+    echo "${gateway_route} ${rt_num}" >> ${NAT_BATCHFILE}_ip
+  fi
+  echo "$IP_BIN rule add${src_iface} fwmark ${fwm} lookup ${rt_num}" >> ${NAT_BATCHFILE}_ip
+
+}
+
+# Handle Stopping
+if [ "`echo $1 |$GREP_BIN -ic 'stop'`" -ne 0 ]; then
+  echo -n "Stopping Gateway Support.. "
+  destroy_gate
+  echo "Done."
+  exit 0
+fi
+
+# Check for local environment configuration 
+if [ ! -e $ROUTED_SERVICES_CONFIG ]; then
+  echo " *** ERROR ***"
+  echo "Can not find file (${ROUTED_SERVICES_CONFIG})!"
+  echo "#######################################################"
+  echo "#            ROUTING Services are DISABLED!           #"
+  echo "#    This machine will not accept/forward traffic!    #"
+  echo "#######################################################"
+  exit 1
+fi
+
+# Pull in our NAT configuration
+. $ROUTED_SERVICES_CONFIG
+
+# Generate the Netfilter Batchfiles
+NAT_BATCHFILE="/dev/shm/.netfilter-gate-$$"
+if ! touch ${NAT_BATCHFILE}_mangle ${NAT_BATCHFILE}_pre ${NAT_BATCHFILE}_input ${NAT_BATCHFILE}_forward ${NAT_BATCHFILE}_output ${NAT_BATCHFILE}_post ${NAT_BATCHFILE}_ip; then
+  echo "Unable to write batchfile ($NAT_BATCHFILE).. Exiting!"
+  exit 1
+else
+  echo "*mangle" >> ${NAT_BATCHFILE}_mangle
+  echo "*nat" >> ${NAT_BATCHFILE}_pre
+  echo "*filter" >> ${NAT_BATCHFILE}_input
+  echo "*filter" >> ${NAT_BATCHFILE}_forward
+  echo "*filter" >> ${NAT_BATCHFILE}_output
+  echo "*nat" >> ${NAT_BATCHFILE}_post
+  trap "{ rm -f ${NAT_BATCHFILE}_mangle ${NAT_BATCHFILE}_pre ${NAT_BATCHFILE}_input ${NAT_BATCHFILE}_forward ${NAT_BATCHFILE}_output ${NAT_BATCHFILE}_post ${NAT_BATCHFILE}_ip; }" EXIT
+fi
+
+# Ensure we handle CONNMARK / FWMARK traffic first
+echo "-A GATE_MANGLE -m connmark ! --mark 0 -j CONNMARK --restore-mark" >> ${NAT_BATCHFILE}_mangle
+echo "-A GATE_MANGLE -m mark ! --mark 0 -j ACCEPT" >> ${NAT_BATCHFILE}_mangle
+echo "-A GATE_INPUT -m mark ! --mark 0 -j ACCEPT" >> ${NAT_BATCHFILE}_input
+
+# Setup DNAT/SNAT services
+echo -n "Generating NAT service rules...     "
+nat_rule_num=0
+
+# Update counter and spinner
+((LOOP_NUM++))
+if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+  spinner
+fi
+
+# Loop over our service configuration
+for line in ${NAT_SERVICES[*]}; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Parse line from configuration file array
+  proto_filter=""
+  nat_type=`echo $line |cut -s -d: -f1`
+  src_ip=`echo $line |cut -s -d: -f2`
+  src_port=`echo $line |cut -s -d: -f3`
+  protocol=`echo $line |cut -s -d: -f4`
+  dst_ip=`echo $line |cut -s -d: -f5`
+  dst_port=`echo $line |cut -s -d: -f6`
+  nat_ip=`echo $line |cut -s -d: -f7`
+  nat_port=`echo $line |cut -s -d: -f8`
+
+  # Sanity check the NAT rule
+  if [ "${nat_type}x" == "x" ]; then
+    echo -ne "\b\b\b\b\b\n WARNING: NAT type is required! (${line}) Skipping..     "
+    continue
+  # Ignore tcp/udp without IP assignment 
+  elif [ "${src_ip}x" == "x" ] || [ "${dst_ip}x" == "x" ] && [ "${nat_ip}x" == "x" ]; then
+    echo -ne "\b\b\b\b\b\n WARNING: Source/Destination and NAT IP address required for NAT! (${line}) Skipping..     "
+    continue
+  # Ignore lines with no valid protocol when ports are specified 
+  elif ! [[ $protocol =~ ^(tcp|udp)$ ]] && ([ "${src_port}x" != "x" ] || [ "${dst_port}x" != "x" ]); then
+    echo -ne "\b\b\b\b\b\n WARNING: TCP/UDP protocol must be specified when using Source and/or Destination ports! (${line}) Skipping..     "  
+    continue
+  fi
+
+  if [ "${protocol}x" != "x" ]; then
+    proto_filter=" -p ${protocol} "
+  else
+    proto_filter=""
+  fi
+
+  # Infer interfaces
+  src_iface=`infer_interface ${src_ip}`
+  dst_iface=`infer_interface ${dst_ip}`
+  nat_iface=`infer_interface ${nat_ip}`
+
+  # Fix up implied netmasks (0.0.0.0)
+  src_ip=`implied_netmask ${src_ip}`
+  dst_ip=`implied_netmask ${dst_ip}`
+
+  case $nat_type in
+    [Dd][Nn][Aa][Tt]) 
+
+	# Check for required interface
+        if [ "${dst_iface}x" == "x" ] || [ "${nat_iface}x" == "x" ]; then
+          echo "Cannot find valid NAT interfaces for entry (${line}).. Skipping!"
+          continue
+        fi
+
+	# Mark the inbound traffic
+        echo "-A GATE_MANGLE ${proto_filter}-i ${dst_iface}$(test ! -z ${src_ip} && echo " -s ${src_ip}")$(test ! -z ${src_port} && echo " --sport ${src_port}") -d ${dst_ip}$(test ! -z ${dst_port} && echo " --dport ${dst_port}") -j MARK --set-mark ${FM_NUM}" >> ${NAT_BATCHFILE}_mangle
+
+	# DNAT marked traffic to host
+	echo "-A GATE_PRE ${proto_filter}-i ${dst_iface} -m mark --mark ${FM_NUM} -j DNAT --to-destination ${nat_ip}$(test ! -z ${nat_port} && echo ":${nat_port}")" >> ${NAT_BATCHFILE}_pre
+
+        # Set a gateway for NAT'd traffic
+	enable_policy_route ${dst_iface} ${FM_NUM} ${nat_iface}
+        gate_ifaces=`echo -e "${gate_ifaces}\n ${dst_iface}"`
+        ;;
+
+    [Ss][Nn][Aa][Tt])
+
+	# Check for required interface
+        if [ "${src_iface}x" == "x" ] || [ "${nat_iface}x" == "x" ]; then
+          echo "Cannot find valid NAT interfaces for entry (${line}).. Skipping!"
+          continue
+        fi
+
+        # Mark the oubbound traffic
+        echo "-A GATE_MANGLE ${proto_filter}-i ${src_iface} -s ${src_ip}$(test ! -z ${dst_ip} && echo " -d ${dst_ip}")$(test ! -z ${src_port} && echo " --sport ${src_port}")$(test ! -z ${dst_port} && echo " --dport ${dst_port}") -j MARK --set-mark ${FM_NUM}" >> ${NAT_BATCHFILE}_mangle
+
+	# SNAT marked traffic to host
+	echo "-A GATE_POST ${proto_filter}-m mark --mark ${FM_NUM} -j SNAT --to-source ${nat_ip}$(test ! -z ${nat_port} && echo ":${nat_port}")" >> ${NAT_BATCHFILE}_post
+
+        # Set a gateway for NAT'd traffic
+        enable_policy_route ${nat_iface} ${FM_NUM} ${src_iface}
+        gate_ifaces=`echo -e "${gate_ifaces}\n ${nat_iface}"`
+	;;
+  
+    *)
+     continue ;;
+  esac
+
+  # Save the fwmark via conntrack so we can match the session reply
+  echo "-A GATE_MANGLE -m mark --mark ${FM_NUM} -j CONNMARK --save-mark" >> ${NAT_BATCHFILE}_mangle
+  echo "-A GATE_MANGLE -m mark --mark ${FM_NUM} -j ACCEPT" >> ${NAT_BATCHFILE}_mangle
+
+  # Allow marked traffic to pass between physical interfaces
+  echo "-A GATE_FORWARD -m mark --mark ${FM_NUM} -j ACCEPT" >> ${NAT_BATCHFILE}_forward
+
+  # Increment the NAT rule number
+  nat_rule_num=$(( $nat_rule_num + 1 ))
+  FM_NUM=$(( $FM_NUM + 1 ))
+
+ 
+done
+
+#for iface in `echo "$gate_ifaces" |$SORT_BIN -u`; do
+
+#  # Update counter and spinner
+#  ((LOOP_NUM++))
+#  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+#    spinner
+#  fi
+
+#  # Enable policy route 
+#  iface_network=`$IP_BIN route show dev ${iface} scope link |$AWK_BIN '{print $1}'`
+#  echo "-A GATE_OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED --ctorigdst ${iface_network} -j MARK --set-mark ${FM_NUM}" >> ${NAT_BATCHFILE}_output
+#  enable_policy_route ${iface} ${FM_NUM}
+#  FM_NUM=$(( $FM_NUM + 1 ))
+
+#  # Allow ICMP (debug) 
+#  echo "-A GATE_INPUT -i ${iface} -p icmp --icmp-type echo-request -j ACCEPT" >> ${NAT_BATCHFILE}_input
+
+#done
+
+# Generate Route map rules
+echo -en "\b\b\b\b\b Done.\nGenerating route map rules...     "
+route_table_num=0
+
+# Loop over our service configuration
+for line in ${ROUTE_SERVICES[*]}; do
+
+  # Update counter and spinner
+  ((LOOP_NUM++))
+  if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+    spinner
+  fi
+
+  # Parse line from configuration file array
+  src_iface=`echo $line |cut -s -d: -f1`
+  src_ip=`echo $line |cut -s -d: -f2`
+  src_port=`echo $line |cut -s -d: -f3`
+  protocol=`echo $line |cut -s -d: -f4`
+  dst_ip=`echo $line |cut -s -d: -f5`
+  dst_port=`echo $line |cut -s -d: -f6`
+  next_hop=`echo $line |cut -s -d: -f7`
+
+  # Ignore tcp/udp/icmp without IP assignment
+  if [ "${src_ip}x" == "x" ] && [ "${dst_ip}x" == "x" ]; then
+    echo -ne "\b\b\b\b\b\n WARNING: Source and/or Destination IP address required for ROUTING! (${line}) Skipping..     "
+    continue
+  # Ignore lines with no valid protocol when ports are specified 
+  elif ! [[ $protocol =~ ^(tcp|udp|ipencap)$ ]] && ([ "${src_port}x" != "x" ] || [ "${dst_port}x" != "x" ]); then
+    echo -ne "\b\b\b\b\b\n WARNING: TCP/UDP protocol must be specified when using Source and/or Destination ports! (${line}) Skipping..     "  
+    continue
+  fi
+
+  if [ "${protocol}x" != "x" ]; then
+    proto_filter="-p ${protocol} "
+  else
+    proto_filter=""
+  fi
+
+  if [ "${next_hop}x" == "x" ]; then
+
+    # Infer routing interfaces
+    if [ "${src_iface}x" == "x" ]; then
+      src_iface=`infer_interface ${src_ip}` 
+    fi
+    dst_iface=`infer_interface ${dst_ip}`
+
+    if [ "${src_iface}x" == "x" ] || [ "${dst_iface}x" == "x" ]; then
+      echo "Cannot find routed interfaces for entry (${line}).. Skipping!"
+      continue
+    fi
+
+    echo "-A GATE_FORWARD ${proto_filter}-i ${src_iface} -s ${src_ip}$(test ! -z ${src_port} && echo " --sport ${src_port}") -o ${dst_iface} -d ${dst_ip}$(test ! -z ${dst_port} && echo " --dport ${dst_port}") -j ACCEPT" >> ${NAT_BATCHFILE}_forward
+
+  else
+    
+    # Infer next hop interface
+    nh_iface=`infer_interface ${next_hop}`
+    if [ $? -ne 0 ]; then
+      echo "Cannot find routed interfaces for entry (${line}).. Skipping!"
+      continue
+    fi
+
+    # Check if we can reach the specified upstream router 
+    $IP_BIN route get ${next_hop} &> /dev/null
+    if [ $? -ne 0 ]; then
+      echo -ne "\b\b\b\b\b\n WARNING: Nexthop specified is UNREACHABLE! (${line}) Skipping..     "
+      continue
+    fi
+
+    # Handle the src
+    if [ "${src_iface}x" == "x" ]; then
+      iface_filter="-i ${src_iface} "
+    else
+      iface_filter=""
+    fi
+
+    # Create a policy based route
+    nh_network="`$IP_BIN route show dev ${nh_iface} scope link |head -1 |$AWK_BIN '{print $1}'`"
+    policy_route="$IP_BIN route add default via ${next_hop} dev ${nh_iface} table"
+    network_route="$IP_BIN route add ${nh_network} dev ${nh_iface} table"
+    rt_num=`$GREP_BIN -e "^\${policy_route} " ${NAT_BATCHFILE}_ip |$AWK_BIN '{print $10}'`
+    if [ "${rt_num}x" == "x" ]; then
+      rt_num=${RT_NUM}
+      # Increment the routing table number
+      RT_NUM=$(( $RT_NUM + 1 ))
+      echo "${network_route} ${rt_num}" >> ${NAT_BATCHFILE}_ip
+      echo "${policy_route} ${rt_num}" >> ${NAT_BATCHFILE}_ip
+    fi
+    echo "$IP_BIN rule add$(test ! -z ${src_ip} && echo " from ${src_ip}")$(test ! -z ${dst_ip} && echo " to ${dst_ip}") lookup ${rt_num}" >> ${NAT_BATCHFILE}_ip
+ 
+    # Create routing rule FIXME needs some love
+    echo "-A GATE_FORWARD ${iface_filter}${proto_filter}-s ${src_ip}$(test ! -z ${src_port} && echo " --sport ${src_port}") -o ${nh_iface} -d ${dst_ip}$(test ! -z ${dst_port} && echo " --dport ${dst_port}") -j ACCEPT" >> ${NAT_BATCHFILE}_forward
+
+  fi
+
+  # Increase the route table counter
+  route_table_num=$(( $route_table_num + 1 ))
+
+done
+
+# Allow related traffic to pass 
+echo "-A GATE_FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT" >> ${NAT_BATCHFILE}_forward
+
+# FIXME
+echo "-A GATE_INPUT -j REJECT --reject-with icmp-admin-prohibited" >> ${NAT_BATCHFILE}_input
+echo "-A GATE_FORWARD -j REJECT --reject-with icmp-admin-prohibited" >> ${NAT_BATCHFILE}_forward
+
+
+# Commit all the chains
+echo "COMMIT" >> ${NAT_BATCHFILE}_mangle
+echo "COMMIT" >> ${NAT_BATCHFILE}_pre
+echo "COMMIT" >> ${NAT_BATCHFILE}_input
+echo "COMMIT" >> ${NAT_BATCHFILE}_forward
+echo "COMMIT" >> ${NAT_BATCHFILE}_output
+echo "COMMIT" >> ${NAT_BATCHFILE}_post
+
+echo -ne "\b\b\b\b\b Done.\n"
+
+# Generate some numbers
+echo -n "Loading ${nat_rule_num} NAT service rules... "
+
+# Clear NAT Chains
+destroy_gate
+
+# Create NAT Chains
+$IPTABLES_BIN -t mangle -N GATE_MANGLE
+$IPTABLES_BIN -t nat -N GATE_PRE
+$IPTABLES_BIN -t filter -N GATE_INPUT
+$IPTABLES_BIN -t filter -N GATE_FORWARD
+$IPTABLES_BIN -t filter -N GATE_OUTPUT
+$IPTABLES_BIN -t nat -N GATE_POST
+
+# Bulkload NAT Rules
+cat ${NAT_BATCHFILE}_mangle ${NAT_BATCHFILE}_pre ${NAT_BATCHFILE}_input ${NAT_BATCHFILE}_forward ${NAT_BATCHFILE}_output ${NAT_BATCHFILE}_post |$IPTABLES_RESTORE_BIN -n
+load_status=$?
+echo "Done."
+
+echo -n "Enabling NAT service rules... "
+if [ $load_status -ne 0 ]; then
+  echo "Problems applying NAT rules.. Aborting!"
+  exit 1
+else
+  $IPTABLES_BIN -t mangle -A PREROUTING -j GATE_MANGLE 2> /dev/null
+  $IPTABLES_BIN -t nat -A PREROUTING -j GATE_PRE 2> /dev/null
+  $IPTABLES_BIN -t filter -A INPUT -j GATE_INPUT 2> /dev/null
+  $IPTABLES_BIN -t filter -A FORWARD -j GATE_FORWARD 2> /dev/null
+  $IPTABLES_BIN -t filter -A OUTPUT -j GATE_OUTPUT 2> /dev/null
+  $IPTABLES_BIN -t nat -A POSTROUTING -j GATE_POST 2> /dev/null
+
+  echo -en "Done.\nLoading ${route_table_num} Route Maps... "
+
+  # Load route maps
+  /bin/bash ${NAT_BATCHFILE}_ip
+  
+  echo -en "Done.\nEnabling Route Maps... "
+  # Flush the routing cache
+  $IP_BIN route flush cache
+
+  # Adjust the conntrack defaults
+  echo "524288" > /proc/sys/net/ipv4/netfilter/ip_conntrack_max
+  echo "900" > /proc/sys/net/ipv4/netfilter/ip_conntrack_tcp_timeout_established
+
+  # Enable packet forwarding
+  echo "1" > /proc/sys/net/ipv4/ip_forward
+
+  echo "Done."
+
+fi
+

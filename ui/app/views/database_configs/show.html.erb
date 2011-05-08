@@ -1,0 +1,19 @@
+<% set_html_title @database_config.name, "Database Configurations" %>
+
+<%= layout_show_element('Config Name', @database_config.name ) %> 
+<%= layout_show_element('Max Connections', @database_config.max_connections  ) %> 
+
+<%= layout_show_element('Shared Buffers', @database_config.shared_buffers ) %> 
+<%= layout_show_element('Work Memory', @database_config.work_mem ) %> 
+<%= layout_show_element('Maintenance Memory', @database_config.maintenance_mem ) %> 
+<%= layout_show_element('Search Path', @database_config.search_path ) %> 
+<%= layout_show_element('Temp Buffers', @database_config.temp_buffers ) %> 
+<%= layout_show_element('timezone', @database_config.timezone ) %> 
+<%= layout_show_element('log_min_duration_statement', @database_config.log_min_duration_statement ) %> 
+<%= layout_show_element('effective_cache_size', @database_config.effective_cache_size ) %> 
+<%= layout_show_element('Disk Size', @database_config.disk_size ) %> 
+
+
+<%= link_to 'Edit', edit_database_config_path(@database_config) %> |
+<%= link_to 'Destroy', @database_config, :confirm => 'Are you sure?', :method => :delete %> |
+<%= link_to 'List', database_configs_path %>

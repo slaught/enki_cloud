@@ -1,0 +1,9 @@
+id,distribution, kernel 
+1,"Debian Lenny",2.6.26-1-xen-amd64
+2,Debian Lenny,2.6.26-1-xen-686
+3,Debian Etch,2.6.18-6-xen-686
+4,Debian Etch,2.6.18-6-xen-amd64
+5,Debian Etch,2.6.18-4-xen-686
+6,Ubuntu Dapper,2.6.18-6-xen-686
+7,Ubuntu Dapper,2.6.18-4-xen-686
+8,Ubuntu Dapper,2.6.26-1-xen-686

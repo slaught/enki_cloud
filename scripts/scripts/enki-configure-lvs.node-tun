@@ -1,0 +1,225 @@
+#!/bin/bash
+
+# This script enables LVS direct routing for end nodes 
+
+# Michael Vallaly Ver 4.2 (April '10) 
+
+NET_SERVICES_CONFIG="/etc/enki/configs/node/net.services"
+
+GREP_BIN="/bin/grep"
+IPTABLES_BIN="/sbin/iptables"
+IPTABLES_RESTORE_BIN="${IPTABLES_BIN}-restore"
+IP_BIN="/sbin/ip"
+MODPROBE_BIN="/sbin/modprobe"
+LSMOD_BIN="/bin/lsmod"
+
+TUN_IFACE="tunl0"
+TUN_IP="169.254.254.254/32"
+TUN_MTU="1460"
+
+SPINNER_MOD="2"
+
+#################################################################################################
+
+# GLOBALS
+ROT=0
+LOOP_NUM=0
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser permissions required to configure LVS!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $GREP_BIN $IP_BIN $MODPROBE_BIN $LSMOD_BIN $IPTABLES_BIN $IPTABLES_RESTORE_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Progress Spinner
+spinner() {
+  local SPIN
+  case "$ROT" in
+        0)
+          SPIN=\-
+          ROT=1
+          ;;
+        1)
+          SPIN=\\
+          ROT=2
+          ;;
+        2)
+          SPIN=\|
+          ROT=3
+          ;;
+        3)
+          SPIN=\/
+          ROT=0
+          ;;
+        esac
+  echo -e "\b\b\b\b\b (${SPIN}) \c "
+  return
+}
+
+destroy_lvs_mangle () {
+  $IPTABLES_BIN -t filter -D INPUT -j LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t mangle -D POSTROUTING -j LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t filter -F LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t filter -X LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t mangle -F LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t mangle -X LVS_POST 2> /dev/null
+
+  $IPTABLES_BIN -t nat -D PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -D OUTPUT -j LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t nat -F LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -X LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -F LVS_OUT 2> /dev/null
+  $IPTABLES_BIN -t nat -X LVS_OUT 2> /dev/null
+}
+
+# Handle Stopping
+if [ "`echo $1 |$GREP_BIN -ic 'stop'`" -ne 0 ]; then
+  echo -n "Stopping LVS Support.. "
+  destroy_lvs_mangle
+  echo "Done."
+  exit 0
+fi
+
+# Check for local environment configuration 
+if [ ! -e $NET_SERVICES_CONFIG ]; then
+  echo " *** ERROR ***"
+  echo "Can not find file (${NET_SERVICES_CONFIG})!"
+  echo "#######################################################"
+  echo "#              LVS Services are DISABLED!             #"
+  echo "# This machine will not accept load balanced traffic! #"
+  echo "#######################################################"
+  exit 1
+fi
+
+# Pull in our LVS configuration
+. $NET_SERVICES_CONFIG
+
+# Generate the Netfilter Batchfiles
+LVS_BATCHFILE="/dev/shm/.netfilter-lvs-$$"
+if ! touch ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_mangle_post ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out; then
+  echo "Unable to write batchfile ($LVS_BATCHFILE).. Exiting!"
+  exit 1
+else
+  echo "*filter" >> ${LVS_BATCHFILE}_filter_in
+  echo "*mangle" >> ${LVS_BATCHFILE}_mangle_post
+  echo "*nat" >> ${LVS_BATCHFILE}_nat_pre
+  echo "*nat" >> ${LVS_BATCHFILE}_nat_out
+  trap "{ rm -f ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_mangle_post ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out; }" EXIT
+fi
+
+# Setup load balanced and port forwarded services
+echo -n "Generating LVS HA service rules...     "
+applied_ip=""
+
+# Update counter and spinner
+((LOOP_NUM++))
+if [ $(($LOOP_NUM % $SPINNER_MOD)) = 0 ]; then
+  spinner
+fi
+
+# Loop over our service configuration
+for line in ${NET_SERVICES[*]}; do
+  # Parse line from configuration file array
+  ext_ip=`echo $line |cut -s -d: -f1`
+  ext_port=`echo $line |cut -s -d: -f2`
+  protocol=`echo $line |cut -s -d: -f3`
+  local_port=`echo $line |cut -s -d: -f4`
+  
+  # Skip all the non-HA services
+  if [ "$ext_ip" == "" -o "$ext_port" == "" ]; then
+    continue
+  fi
+
+  # Redirect traffic for HA services to localhost
+  echo "-A LVS_PRE -i $TUN_IFACE -p ${protocol} -d ${ext_ip} --dport ${ext_port} -j REDIRECT --to-ports ${local_port}" >> ${LVS_BATCHFILE}_nat_pre  	# External Service Redirect
+  echo "-A LVS_OUT -p ${protocol} -d ${ext_ip} --dport ${ext_port} -j REDIRECT --to-ports ${local_port}" >> ${LVS_BATCHFILE}_nat_out   			# Local Service Redirect
+  echo "-A LVS_IN -i $TUN_IFACE -p ${protocol} --dport ${local_port} -j ACCEPT" >> ${LVS_BATCHFILE}_filter_in
+
+  # Check if we have a unique HA service
+  if [ "$(echo $applied_ip |$GREP_BIN -cw ${ext_ip})" -eq "0" ]; then
+    applied_ip+=" ${ext_ip}"
+  fi
+
+done
+
+# Accept encapsulated ip traffic on all interfaces
+echo " -A LVS_IN -p ipencap -j ACCEPT" >> ${LVS_BATCHFILE}_filter_in
+
+# Clamp the MTU of outgoing TCP packets to fit in tunnel's MTU with encapsulation overhead (20 bytes)
+TUN_MSS=$((${TUN_MTU} - 20))
+echo "-A LVS_POST -s ${TUN_IP} -p tcp -m tcp --tcp-flags SYN,RST,ACK SYN,ACK -m tcpmss --mss ${TUN_MSS}:1500 -j TCPMSS --set-mss ${TUN_MSS}" >> ${LVS_BATCHFILE}_mangle_post	# Clamp HA Response MTU
+
+# Commit all the chains
+echo "COMMIT" >> ${LVS_BATCHFILE}_filter_in
+echo "COMMIT" >> ${LVS_BATCHFILE}_mangle_post
+echo "COMMIT" >> ${LVS_BATCHFILE}_nat_pre
+echo "COMMIT" >> ${LVS_BATCHFILE}_nat_out
+
+echo -en "\b\b\b\b\b Done.\n"
+
+# Enable Tunel Interfaces for HA services
+echo -n "Enabling Tunnel Interface... "
+
+tunnel_status=0
+# Load the ipip network module if it isn't loaded already
+if ! $LSMOD_BIN |$GREP_BIN -qe '^ipip'; then
+  if ! $MODPROBE_BIN ipip; then
+    echo -e "Tunnel kernel module not loaded! Aborting.."
+    exit 1
+  fi
+fi
+
+# Bring up the tun interface
+$IP_BIN addr flush dev $TUN_IFACE 2> /dev/null
+if ! $IP_BIN link set $TUN_IFACE mtu $TUN_MTU up; then
+  echo -e "Tunnel interface won't come up! Aborting.."
+  exit 1
+fi
+
+# Configure tun network alias for each unique service address. 
+$IP_BIN addr add ${TUN_IP} dev ${TUN_IFACE} 
+
+# Make sure we ARP locally only on our tunnel interface 
+echo 1 > /proc/sys/net/ipv4/conf/${TUN_IFACE}/arp_ignore
+
+echo -e "Done."
+
+# Generate some numbers
+LVS_NUM=`echo "${applied_ip}" |wc -w`
+echo -n "Loading $LVS_NUM LVS rules... "
+
+# Clear LVS Chains
+destroy_lvs_mangle
+
+# Create LVS Chains
+$IPTABLES_BIN -t filter -N LVS_IN
+$IPTABLES_BIN -t mangle -N LVS_POST
+$IPTABLES_BIN -t nat -N LVS_PRE
+$IPTABLES_BIN -t nat -N LVS_OUT
+
+# Bulkload LVS Rules
+cat ${LVS_BATCHFILE}_filter_in ${LVS_BATCHFILE}_mangle_post ${LVS_BATCHFILE}_nat_pre ${LVS_BATCHFILE}_nat_out |$IPTABLES_RESTORE_BIN -n
+load_status=$?
+echo "Done."
+
+echo -n "Enabling HA LVS service rules... "
+if [ $load_status -ne 0 ]; then
+  echo "Problems applying HA LVS rules.. Aborting!"
+  exit 1
+else
+  $IPTABLES_BIN -t filter -A INPUT -j LVS_IN 2> /dev/null
+  $IPTABLES_BIN -t mangle -A POSTROUTING -j LVS_POST 2> /dev/null
+  $IPTABLES_BIN -t nat -A PREROUTING -j LVS_PRE 2> /dev/null
+  $IPTABLES_BIN -t nat -A OUTPUT -j LVS_OUT 2> /dev/null
+  echo "Done."
+fi
+
+

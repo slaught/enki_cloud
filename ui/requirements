@@ -1,0 +1,35 @@
+
+problems:
+
+new service link is missing
+service with existing IP.
+
+#################################################################
+#################################################################
+#################################################################
+#################################################################
+
+Create Node
+ - physical 
+ - virtual
+ 
+location list
+  add generic location
+  add rack location
+  todo: add PDU location
+  
+datacenter list
+   - list nodes per datacenter
+  - draw picture
+
+
+node 
+  list
+  create
+      select os
+      rework nic address
+      add new nic for domU
+      check domU cluster assignment vs nic eth assignments
+      uuid
+      node_type
+

@@ -1,0 +1,16 @@
+enki/bin/updown-node.sh
+enki/bin/updown-cluster.sh
+etc/enki/scripts/enki-firewall
+etc/enki/scripts/enki-deploy-node-cfg
+etc/enki/scripts/enki-update-apt-packages
+etc/enki/scripts/enki-mgmt-interface
+etc/enki/scripts/enki-clamscan
+etc/enki/scripts/enki-process-node-logs
+etc/enki/scripts/enki-transfer-file
+etc/enki/scripts/enki-configure-vlan
+etc/enki/scripts/enki-logrotate
+etc/enki/scripts/enki-dsh-wrapper
+etc/enki/scripts/mime_strip.html_bodies.pl
+etc/enki/scripts/enki-ramdisk
+etc/enki/scripts/enki-mount-iqn
+etc/enki/scripts/enki-san-interface

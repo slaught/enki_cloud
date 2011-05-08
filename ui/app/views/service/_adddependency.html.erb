@@ -1,0 +1,6 @@
+<% form_for :service_dependency, @service_dependency, :url => { :action => "add_dependency" }  do |f| %>
+  <%= hidden_field(:service, :id) %>
+  <%= collection_select(:dependency, :id, Service.find(:all, :conditions => ["ip_address is not null"], :order => :name), :service_id, :to_label) %>
+
+  <%= submit_tag 'Add' %>
+<% end %>

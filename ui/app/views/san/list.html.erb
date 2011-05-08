@@ -1,0 +1,23 @@
+<% set_html_title "San Management" %>
+<h1>San Management</h1>
+
+<table class="sortable">
+  <tr class="thead">
+    <th>San name</th> <th>Description</th>
+  <th>IP Network</th> 
+  </tr>
+<% for entry in @sans%>
+  <tr>
+    <td><%= link_to entry.san_name, :action => "show", :id => entry %></td>
+    <td><%= entry.description %></td>
+    <td sorttable_customkey="<%= sorttable_ip(entry.network.ip_range) %>"><%= entry.network.to_label  %></td>
+  <% permitted_to? :edit, :san do %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"), {:action => "edit", :id => entry}, {:title => "Edit"} %></td>
+  <%end %>
+  </tr>
+<% end %>
+</table>
+<br />
+<%= link_to "New ", :action => "new" if permitted_to? :create, :san  %>
+
+

@@ -1,0 +1,412 @@
+#!/bin/sh
+# Michael Vallaly (Sept '09) Ver. 3.0
+#============================================================================
+# ENKI Xen vlan bridge start/stop script.
+# Xend calls a network script when it starts.
+# The script name to use is defined in /etc/xen/xend-config.sxp
+# in the network-script field.
+#
+# This script creates a bridge (default xenbr${vlan}), creates a device
+# (default vlan${vlan}), and adds it to the bridge. 
+#
+# To use this script, vconfig must be installed.
+#
+# Usage:
+#
+# network-bridge-vlan (start|stop|status) {VAR=VAL}*
+#
+# Vars:
+#
+# bridge     The bridge to use (default xennbr${vlan}).
+# netdev     The interface to add to the bridge (default bond0}).
+# vif        Dom0 Virtual interface to use (default vif0.0).
+#
+# Internal Vars:
+# vlan="4000"
+# vlandev="vlan4000"
+#
+# start:
+# Creates the bridge
+# Adds vlandev to netdev
+# Enslaves vlandev to bridge
+#
+# stop:
+# Removes vlandev from the bridge
+# Removes vlandev from netdev 
+# Deletes bridge
+#
+# status:
+# Print vlan, bridge
+#
+#============================================================================
+dir=$(dirname "$0")
+. "$dir/xen-script-common.sh"
+
+findCommand "$@"
+evalVariables "$@"
+
+# Load the netloop module (required)
+modprobe netloop > /dev/null 2>&1 || true
+
+# Set some defaults
+netdev=${netdev:-bond0}
+bridge=${bridge:-xenbr4000}
+vif=${vif:-vif0.0}
+
+# Generate some useful variables
+dom0_xen_if=$vif
+dom0_local_if="veth`echo $vif |cut -s -d. -f2`"
+vlan=`echo $bridge |tr -d [:alpha:][:space:][:punct:]`
+vlandev="vlan${vlan}"
+pdev="p${vlandev}"
+
+# Usage: safe_iface_transform (move|rename) src dst
+# Move all IP adddresses (including aliases) and routes from device $src to $dst.
+# or
+# Rename interface from $src to $dst
+
+safe_iface_transform () {
+
+   local rename=$1
+   local src=$2
+   local dst=$3
+
+   local addrs=""
+   local routes=""
+
+   # Check for pre-existing device on rename
+   if [ "${rename}" == "rename" ] && ip link show ${dst} &>/dev/null ; then
+     echo "Destination interface (${dst}) already exists! Bailing."
+     exit 1
+   fi
+
+   # Don't bother with IP addresses if $dst already has IP addresses configured.
+   if ip addr show dev ${dst} 2> /dev/null |egrep -q '^ *inet ' ; then
+     echo "Destination interface (${dst}) is already configured! Bailing."
+     exit 1
+   fi
+
+   # Generate IP Info
+   addrs=`ip addr show dev ${src} | egrep '^ *inet ' | sed -e "
+      s/inet/ip addr add/
+      s@\([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+/[0-9]\+\)@\1@
+      s/${src}/dev ${dst} label ${dst}/
+      s/secondary//" | sed -ne "{ h
+      P
+      s/${dst}/${src}/g
+      s/ip addr add /ip addr del /
+      P
+      d}" |sed 's/^[ \t]*//'`
+
+   # Generate Routing Info
+   routes=`ip route list |grep -ve "  proto kernel  scope link  src "| sed -ne "
+        /dev ${src}\( \|$\)/ {
+        h
+        s/^/ip route del /
+        P
+        g
+        s/${src}/${dst}/
+        s/^/ip route add /
+        P
+        d}"`
+
+   # Rename Interface
+   if [ "${rename}" == "rename" ]; then
+
+     ip link set ${src} down
+     ip link set ${src} name ${dst}
+     ip link set ${dst} up
+
+   else # Move Inteface
+
+     # Remove additional routes if we have any
+     if [ "${routes}x" != "x" ]; then
+
+       # Remove routes from src
+       echo "$routes" |grep -e " del " |sort -r -k5 |sh -e
+
+     fi
+
+     # Add/Remove Address if we have any
+     if [ "${addrs}x" != "x" ]; then
+
+       # Remove addresses from src
+       echo "$addrs" |grep -e " del " |sh -e
+
+       # Add addresses to dst
+       echo "$addrs" |grep -e " add " |sh -e
+
+     fi
+
+  fi
+
+  # Add additional routes if we have any
+  if [ "${routes}x" != "x" ]; then
+
+    # Add routes to dst
+    echo "$routes" |grep -e " add " |sort -k5 |sh -e
+
+  fi
+}
+
+# Returns 0 if the interface named exists (whether up or down), 1 otherwise.
+link_exists()
+{
+    if ip link show "$1" &>/dev/null; then
+      return 0
+    else
+      return 1
+    fi
+}
+
+# Returns 0 if the bridge named exists (whether up or down), 1 otherwise.
+bridge_exists()
+{
+   # Return 0 if our bridge exists and has atleast one interface attached to it
+   if [ "$(ls -1 /sys/class/net/$1/brif/ 2> /dev/null |wc -l)" -gt "0" ]; then
+     return 0
+   else
+     return 1
+   fi
+}
+
+# Usage: create_bridge bridge
+create_bridge () {
+    local bridge=$1
+
+    # Don't create the bridge if it already exists.
+    if ! brctl show |grep -qwe "${bridge}" ; then
+	brctl addbr ${bridge}
+	brctl stp ${bridge} off
+	brctl setfd ${bridge} 0
+    fi
+    ip link set ${bridge} addr fe:ff:ff:ff:ff:ff arp off
+    ip link set ${bridge} up
+}
+
+# Usage: add_to_bridge bridge dev
+add_to_bridge () {
+    local bridge=$1
+    local dev=$2
+    # Don't add $dev to $bridge if it's already on a bridge.
+    if ! brctl show |grep -qwe "${dev}" ; then
+	brctl addif ${bridge} ${dev}
+    fi
+}
+
+# adds $dev to $bridge but waits for $dev to be in running state first
+add_to_bridge2() {
+    local bridge=$1
+    local dev=$2
+    local maxtries=10
+
+    echo -n "Waiting for ${dev} to negotiate link."
+    for i in `seq ${maxtries}` ; do
+        if ifconfig ${dev} | grep -q RUNNING ; then
+            break
+        else
+            echo -n '.'
+            sleep 1
+        fi
+    done
+
+    if [ ${i} -eq ${maxtries} ] ; then echo '(link isnt in running state)' ; fi
+
+    add_to_bridge ${bridge} ${dev}
+}
+
+# Usage: show_status vlandev bridge
+# Print vlan and bridge
+show_status () {
+    local vlandev=$1
+    local bridge=$2
+    
+    echo '=================================================================='
+    if [ -e "cat /proc/net/vlan/${vlandev}" ]; then
+      cat /proc/net/vlan/${vlandev}
+      echo ' '
+    fi
+    brctl show ${bridge}
+    echo '=================================================================='
+}
+
+op_start () {
+# Check that the netdev device exists
+if ! link_exists "${netdev}"; then
+   echo "Error ${netdev} does not exist! Aborting.."
+   exit 1
+fi
+
+# Check if the bridge already exists
+if ! bridge_exists "${bridge}"; then
+
+  # Create the bridge device
+  create_bridge ${bridge}
+
+  # Check if vlandev exists already is 
+  if link_exists "${vlandev}"; then
+        
+    # Check if vlandev is already used locally
+    if [ "$(ip link show ${vlandev} |grep  'link\/ether' |awk '{print $2}')" != "fe:ff:ff:ff:ff:ff" ]; then 
+ 
+       # Grab the local MAC address
+       local mac=`ip link show ${vlandev} | grep 'link\/ether' | sed -e 's/.*ether \(..:..:..:..:..:..\).*/\1/'`
+
+       # Fixup local interface MAC address
+       ip link set ${vlandev} arp off
+       ip link set ${dom0_local_if} down
+       ip link set ${dom0_local_if} addr ${mac} arp on
+       ip link set ${dom0_local_if} up
+       # Transfer IP / Routes to new interface
+       safe_iface_transform move ${vlandev} ${dom0_local_if}
+       # Rename our interfaces
+       safe_iface_transform rename ${vlandev} ${pdev}
+       safe_iface_transform rename ${dom0_local_if} ${vlandev}
+       # Fixup the phyical interface MAC address
+       ip link set ${pdev} down
+       ip link set ${pdev} addr fe:ff:ff:ff:ff:ff arp off
+       # Add the physical interface on the bridge 
+       ip addr flush ${pdev} 2> /dev/null
+       add_to_bridge  ${bridge} ${pdev}
+       ip link set ${pdev} up
+
+    else
+
+      # Add the vlandev to the bridge 
+      add_to_bridge2 ${bridge} ${vlandev}
+
+    fi
+
+  else # vlandev does not exist
+
+    # Bring our our lower interface
+    ip link set ${netdev} up
+
+    # Create the VLAN interface
+    vconfig set_name_type VLAN_PLUS_VID_NO_PAD &> /dev/null
+    vconfig add ${netdev} ${vlan} 1> /dev/null
+    ip link set ${vlandev} down
+    ip addr flush ${vlandev} 2> /dev/null
+    ip link set ${vlandev} addr fe:ff:ff:ff:ff:ff arp off
+    ip link set ${vlandev} up
+
+    # Add the vlandev to the bridge
+    add_to_bridge2 ${bridge} ${vlandev}
+  
+  fi  
+
+fi
+
+# Setup the Dom0<->DomU interface on the bridge
+ip link set ${dom0_xen_if} down
+ip addr flush ${dom0_xen_if} 2> /dev/null
+add_to_bridge  ${bridge} ${dom0_xen_if}
+ip link set ${dom0_xen_if} up
+
+}
+
+op_stop () {
+
+    # If we don't get passed a bridge bail
+    if [ "${bridge}" = "null" ]; then
+    	return
+    fi
+    
+    # Ensure our bridge device exists or bail
+    if ! link_exists "${bridge}"; then
+    	return
+    fi
+
+    # Check the vlan specified exists or bail
+    if link_exists "${vlandev}"; then
+
+      # Remove the dom0 interface from the bridge
+      brctl delif ${bridge} ${dom0_xen_if} 2> /dev/null || true
+   
+      # Check if the last bridge device is actually a physical link (dom0 hackery)
+      if [ "$(ls -1 /sys/class/net/${bridge}/brif/)" == "${pdev}" ]; then
+
+	# Grab the local MAC address
+        local mac=`ip link show ${vlandev} | grep 'link\/ether' | sed -e 's/.*ether \(..:..:..:..:..:..\).*/\1/'`
+
+        # Delete the vlan from bridge
+        brctl delif ${bridge} ${pdev}
+
+        # Fixup local interface MAC address
+        ip link set ${vlandev} arp off
+        ip link set ${pdev} down
+        ip link set ${pdev} addr ${mac} arp on
+        ip link set ${pdev} up
+
+        # Rename our interfaces
+        safe_iface_transform rename ${vlandev} ${dom0_local_if}
+	safe_iface_transform rename ${pdev} ${vlandev}
+
+        # Transfer IP / Routes to new interface
+        safe_iface_transform move ${dom0_local_if} ${vlandev}
+
+        # Fixup the phyical interface MAC address
+        ip link set ${dom0_local_if} down
+        ip link set ${dom0_local_if} addr fe:ff:ff:ff:ff:ff arp off
+
+      fi
+
+      # Check if the last bridge device is a vlandev
+      if [ "$(ls -1 /sys/class/net/${bridge}/brif/)" == "${vlandev}" ]; then
+
+        # Delete the vlan from bridge
+        brctl delif ${bridge} ${vlandev}
+
+      fi
+
+      # Check if this was the last device on the bridge and remove it
+      if [ $(ls -1 /sys/class/net/${bridge}/brif/ |wc -l) -eq 0 ]; then
+        ip link set ${bridge} down
+        brctl delbr ${bridge}
+
+        # Check if we are a bridge vlan remove ourselves
+        if [ "$(ip link show ${vlandev} |grep -e 'link/ether' |awk '{print $2}')" == "fe:ff:ff:ff:ff:ff" ]; then
+          ip link set ${vlandev} down
+          vconfig rem ${vlandev} 1> /dev/null
+        fi
+
+      fi
+    fi 
+}
+
+##DEBUG
+##DEBUG_LOG="/tmp/debug"
+##echo "$(date) - network-bridge-vlan $*" >> $DEBUG_LOG
+##echo "DEBUG: bridge = $bridge" >>$DEBUG_LOG
+##echo "DEBUG: vlan = $vlan" >> $DEBUG_LOG
+##echo "DEBUG: vlandev = $vlandev" >> $DEBUG_LOG
+##echo "DEBUG: netdev = $netdev" >> $DEBUG_LOG
+##echo "DEBUG: dom0_xen_if = $dom0_xen_if" >> $DEBUG_LOG 
+##echo "DEBUG: dom0_local_if = $dom0_local_if" >> $DEBUG_LOG 
+##echo "DEBUG --------------- END --------------" >>$DEBUG_LOG 
+##set -x
+
+case "$command" in
+    start)
+	op_start
+	;;
+    
+    stop)
+	op_stop
+	;;
+
+    status)
+	show_status ${vlandev} ${bridge}
+	;;
+
+    *)
+	echo "Unknown command: $command" >&2
+	echo 'Valid commands are: start, stop, status' >&2
+	exit 1
+esac
+
+# Shore up our firewall
+if [ -x "/etc/init.d/enki-firewall" ]; then
+  /etc/init.d/enki-firewall
+fi
+

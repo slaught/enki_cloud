@@ -1,0 +1,37 @@
+<% set_html_title "Create New Node" %>
+<h1>New Node</h1>
+
+<% form_for(:node, @node, :url => {:action => 'create'}) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.label :hostname %><br />
+    <%= f.text_field :hostname %>
+  </p>
+  <p>
+    <%= f.label :node_type %><br />
+    <%= collection_select(:node, :node_type_id, NodeType.all, :node_type_id, :node_type) %>
+  </p>
+  <p> <%= f.label :serial_no %><br />
+    <%= f.text_field :serial_no %> </p>
+
+  <p> <%= f.label :service_tag %><br />
+    <%= f.text_field :service_tag %> </p>
+
+  <p> <%= f.label "Datacenter" %><br />
+    <% select("node", :datacenter, Datacenter.find(:all).map{|d| [d.name, d.name]}) %>
+    <%= collection_select(:node, :datacenter_id, Datacenter.all, :id, :name ) %>
+  </p>
+  <p>
+    <%= f.label :os_version %><br />
+    <%= collection_select(:node, :os_version_id, OsVersion.all, :id, :to_label, { :prompt => "Select a OS"}) %>
+  </p>
+  <p>
+    <%= f.label :model  %><br />
+    <%= collection_select(:node, :model_id, CnuMachineModel.all, :id, :to_label, {:prompt => "Select a Machine"}) %>
+  </p>
+
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

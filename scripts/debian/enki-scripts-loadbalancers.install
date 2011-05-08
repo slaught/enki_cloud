@@ -1,0 +1,7 @@
+etc/enki/scripts/enki-bogon-filter
+etc/enki/scripts/enki-chb-interface
+etc/enki/scripts/enki-configure-lvs.lb-tun
+etc/enki/scripts/enki-ha-interface
+etc/enki/scripts/ipvstop
+etc/enki/scripts/lvs-connection-sync
+etc/enki/scripts/enki_apcsnmp_stonith

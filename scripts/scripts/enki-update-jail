@@ -1,0 +1,123 @@
+#!/bin/bash
+
+# This script creates a jailed SCP/SFTP account for a user.
+
+FIND_BIN="/usr/bin/find" 
+MKDIR_BIN="/bin/mkdir"   
+CHOWN_BIN="/bin/chown"   
+GREP_BIN="/bin/grep"
+CHMOD_BIN="/bin/chmod"   
+MKNOD_BIN="/bin/mknod"   
+INSTALL_BIN="/usr/bin/install -c"
+
+ADMIN_ACCOUNT="ftadmin"  
+
+###########################################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser permissions required to modify jail accounts"
+  exit 1
+fi
+
+usage="Usage: $0 <account_directory>"
+
+if [ $# -lt 1 ]; then
+    echo "$usage"
+    exit 1
+fi
+
+if [ "x$1" == "x" ]; then
+  echo "Invalid directory"
+  exit 1
+else
+  targetdir=`dirname $1`/`basename $1`
+fi
+
+# Required applications for the chroot jail (SCP,SFTP,RSYNC)
+
+REQUIRED_BINARIES="
+/usr/lib/sftp-server
+/bin/ls
+/usr/bin/scp
+/bin/rm
+/bin/ln
+/bin/mv
+/bin/chmod
+/bin/chown
+/bin/chgrp
+/bin/mkdir
+/bin/rmdir
+/bin/pwd
+/usr/bin/groups
+/usr/bin/id
+/bin/echo
+/usr/bin/rsync
+/usr/bin/passwd
+"
+
+# Generate the library dependencies for our applications
+REQUIRED_LIBS="`/usr/bin/ldd $REQUIRED_BINARIES 2> /dev/null |cut -f2 -d\> |cut -f1 -d\( |grep "^ " |sort -u` /lib/libnss_compat*"
+
+# We require the standard system .so's add them
+LDSO_LIST="/lib/ld.so /libexec/ld-elf.so /libexec/ld-elf.so.1 /usr/libexec/ld.so /lib/ld-linux.so.2 /usr/libexec/ld-elf.so.1"
+for lib in $LDSO_LIST; do
+  if [ -f $lib ]; then   
+    REQUIRED_LIBS="$REQUIRED_LIBS $lib"
+  fi
+done
+
+# Create the Jail
+
+if [ -d $targetdir ]; then
+
+  # Cleanup old files
+  $FIND_BIN $targetdir -maxdepth 1 -mindepth 1 ! -name upload ! -name download ! -name .ssh -exec rm -rf {} \;
+
+  # Create the Jail
+  $MKDIR_BIN -p $targetdir/dev
+  $MKDIR_BIN -p $targetdir/etc
+  $MKDIR_BIN -p $targetdir/.ssh
+  $MKDIR_BIN -p $targetdir/upload
+  $MKDIR_BIN -p $targetdir/download
+
+  # Create the passwd file for the jail
+  $GREP_BIN -e ":$targetdir:" /etc/passwd |cut -d: -f1-6|awk -F'\n' '{print $1 ":/no/shell"}' > $targetdir/etc/passwd
+  $GREP_BIN -e "^$ADMIN_ACCOUNT:" /etc/passwd |cut -d: -f1-6|awk -F'\n' '{print $1 ":/no/shell"}' >> $targetdir/etc/passwd
+  $CHMOD_BIN 644 $targetdir/etc/passwd
+
+  # Get the u/gid's
+  basegroup=`basename $targetdir`
+  groupid=`grep -e "^$basegroup:" /etc/group |cut -d: -f3`
+  adminid=`id -u $ADMIN_ACCOUNT`
+
+  # Generate the required devices
+  $MKNOD_BIN $targetdir/dev/null c 1 3  
+  $CHMOD_BIN 666 $targetdir/dev/null
+
+  # Fixup the permissions
+  $CHOWN_BIN 0:0 $targetdir -R
+  $CHOWN_BIN 0:0 $targetdir/.ssh -R
+  $FIND_BIN $targetdir/ -type d -exec $CHMOD_BIN 755 {} \;
+  $FIND_BIN $targetdir/upload -type d -exec $CHMOD_BIN 2770 {} \;
+  $FIND_BIN $targetdir/upload -type f -exec $CHMOD_BIN 660 {} \;
+  $FIND_BIN $targetdir/download -type d -exec $CHMOD_BIN 2770 {} \;
+  $FIND_BIN $targetdir/download -type f -exec $CHMOD_BIN 660 {} \;
+  $CHMOD_BIN 755 $targetdir # Required for scponly to work
+  $CHOWN_BIN 0:$adminid $targetdir
+  $CHOWN_BIN $adminid:$groupid $targetdir/upload -R
+  $CHOWN_BIN $adminid:$groupid $targetdir/download -R
+
+  # Populate the requried binaries and libraries
+  for bin in $REQUIRED_BINARIES; do
+    $INSTALL_BIN -d $targetdir/`dirname $bin`
+    $INSTALL_BIN $bin $targetdir$bin
+  done
+
+  for lib in $REQUIRED_LIBS; do
+    $INSTALL_BIN -d $targetdir/`dirname $lib`
+    $INSTALL_BIN $lib $targetdir/$lib
+  done
+else
+  echo "Directory $targetdir does not exist!"
+fi

@@ -1,0 +1,17 @@
+<%= f.error_messages %>
+<style>fieldset { border: none; }</style>
+
+<%= layout_edit_element('Description', f.text_field(:description) ) %> 
+<%= layout_edit_element('IP Range', f.text_field(:ip_range) ) %> 
+<%= layout_edit_element('VLAN', f.text_field(:vlan) ) %> 
+<%= layout_edit_element('Network Gateway', f.text_field(:network_gateway) ) %> 
+<fieldset><legend>Network Type</legend>
+<%= collection_select(:network, :network_type_id, network_types, :network_type_id, :to_label) %>
+</fieldset>
+
+<!--
+<fieldset><legend>Archive mode?</legend>
+<%= # f.check_box  :archive 
+%>
+</fieldset>
+-->

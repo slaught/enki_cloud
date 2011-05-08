@@ -1,0 +1,52 @@
+<% set_html_title "#{@node.to_label} (Edit)", "Nodes" %>
+<h1>Editing Node</h1>
+
+<% form_for(:node, @node, :url => {:action => 'update', :id => @node}) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.label :hostname %><br />
+    <%= f.text_field :hostname %>
+  </p>
+  <p>
+    <%= f.label :node_type %><br />
+  <% if permitted_to? :manage, :node %> 
+    <%= collection_select(:node, :node_type_id, NodeType.all, :node_type_id, :node_type) %>
+  <% else %>
+    <%= @node.node_type.name  %>
+  <% end %>
+  </p>
+  <p> <%= f.label :mgmt_ip_address %><br />
+    <%= @node.mgmt_ip_address  %> </p>
+
+  <% if permitted_to? :edit, :node %> 
+  <p> <%= f.label :serial_no%><br />
+    <%= f.text_field :serial_no %> </p>
+  <% else %>
+  <p><%= @node.serial_no %></p>
+  <% end %>
+  <% if permitted_to? :edit, :node %>
+  <p> <%= f.label :service_tag %><br />
+    <%= f.text_field :service_tag %> </p>
+  <% else %>
+  <p><%= @node.service_tag %></p>
+  <% end %>
+
+
+  <p>
+    <%= f.label :os_version %><br />
+    <%= collection_select(:node, :os_version_id, OsVersion.all, :id, :to_label, { :prompt => "Select a OS"}) %>
+  </p>
+
+  <p>
+    <%= f.label :model  %><br />
+    <%= collection_select(:node, :model_id, CnuMachineModel.all, :id, :to_label, {:prompt => "Select a Machine"}) %>
+  </p>
+
+  <p>
+    <%= f.submit "Update" %>
+  </p>
+<% end %>
+
+<%= link_to 'Show', :action => 'show', :id => @node %> |
+<%= link_to 'Back', :action => 'list' %>

@@ -1,0 +1,27 @@
+#!/bin/bash
+
+flClamLog="/tmp/clamscan.log";
+stEmailAddress="automatedalerts@example.com";
+
+if [ -x /usr/bin/clamscan ]; then
+  rm $flClamLog > /dev/null 2>&1;
+  nice -n 19 clamscan -r --no-algorithmic --no-mail --no-pe --no-ole --no-pdf --no-html --no-archive -l $flClamLog /
+  if [ ! -f $flClamLog ]; then
+     echo "Error: No file to parse $flClamLog" | mail -s "[ClamScan - FAIL] `uname -n`" $stEmailAddress;
+     exit 1;
+  fi
+  strInfection=`grep "Infected files:" $flClamLog |awk -F": " '{print $2}'`
+  if [ "$strInfection" == "" ]; then
+     mail -s "[ClamScan - FAIL] `uname -n`" $stEmailAddress < $flClamLog;
+  else
+     if [ $strInfection -gt 0 ]; then
+        strInfection="Infection Found: $strInfection";
+        mail -s "[ClamScan - $strInfection] `uname -n`" $stEmailAddress < $flClamLog;
+     else
+        strInfection="Clean";
+        strWordCount=`wc -l $flClamLog|awk '{print $1}'`;
+        grep -A $strWordCount "SCAN SUMMARY" $flClamLog | mail -s "[ClamScan - $strInfection] `uname -n`" $stEmailAddress;
+     fi
+  fi
+fi
+

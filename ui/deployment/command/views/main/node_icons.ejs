@@ -1,0 +1,12 @@
+<% for(var r=0; r<reds.length; r++) {  
+	var node = reds[r];  %>
+	<span class="node_icon down_node <%= node.datacenter_name %>-<%= node.ip_address.replace(/[:\.]/g,'-') %>"><a href="<%= node.status_url %>"></a></span>
+<% } %>
+<% for(var gy=0; gy<grays.length; gy++) {  
+	var node = grays[gy];  %>
+	<span class="node_icon offline_node <%= node.datacenter_name %>-<%= node.ip_address.replace(/[:\.]/g,'-') %>"><a href="<%= node.status_url %>"></a></span>
+<% } %>
+<% for(var gn=0; gn<greens.length; gn++) {  
+	var node = greens[gn];  %>
+	<span class="node_icon up_node <%= node.datacenter_name %>-<%= node.ip_address.replace(/[:\.]/g,'-') %>"><a href="<%= node.status_url %>"></a></span>
+<% } %>

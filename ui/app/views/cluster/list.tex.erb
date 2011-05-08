@@ -1,0 +1,40 @@
+<% 
+def TeX(s) 
+  s.to_s.gsub("_","\\_").gsub("#","\\#")
+end
+%>
+<% for c in @clusters -%>
+\chapter[<%= TeX(c.cluster_name) %>]{<%= TeX(c.cluster_name) %>: <%= TeX(c.description) %>}
+{\bf <%= c.cluster_type %> Service}
+<%  if c.services.length > 0  -%>
+\section{Services}
+\begin{description}
+<%    for service in c.services -%>
+\item[<%= TeX(service.name) -%>] {\bf <%= service.availability %>} {<%= TeX(service.description) %>}
+<%        if service.url.to_s.length > 0 -%>
+\newline\url{<%= service.url -%>} 
+<%        end -%>
+<%    end -%>
+\end{description}
+<%  end -%>
+<%  if c.nodes.length > 0 and c.vlan != 4000 -%>
+\begin{multicols}{4}
+[\section{Nodes}]
+<%    for node in c.nodes -%>
+\texttt{<%= TeX(node.fn_prefix) %>} 
+<%    end -%>
+\end{multicols}
+<%  end -%>
+
+<%   if c.vlan == 4000  -%>
+\begin{multicols}{4}[\section{Management Nodes} 
+List of nodes not anywhere else]
+<%      for node in c.nodes -%>
+<%        if node.clusters.length == 1 and node.is_server? -%>
+            \texttt{<%= TeX(node.fn_prefix) %>}
+<%        end -%>
+<%      end -%>
+\end{multicols}
+<%  end -%>
+
+<% end -%>

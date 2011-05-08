@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# Michael Vallaly (Mar 2009)
+
+# This script checks the health status of a node using ENKI_STATUS
+
+CURL_BIN="/usr/bin/curl"
+CHECK_TIMEOUT="4"
+ENKI_STATUS_URL="/status"
+
+# Default thresholds
+lwr_warn_threshold="20"
+lwr_crit_threshold="0"
+
+#####################################################################
+
+# Nagios exit states
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+# Global counters
+CRIT_COUNT=0
+WARN_COUNT=0
+
+# Check for script dependencies
+for bindep in $CURL_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+# Print our usage line
+usage="Usage: $0 -h <host>\n\n
+\t-h  Remote Host\n
+\t-c  Lower bound critical level\n
+\t-w  Lower bound warning level\n"
+
+# Check our parameters and set the service_type/check_filters
+while getopts "c:h:w:" options; do
+  case $options in
+    h ) REMOTE_HOST="$OPTARG";;
+    c ) lwr_crit_threshold="$OPTARG";;
+    w ) lwr_warn_threshold="$OPTARG";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+if [ $# -lt 1 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Do our CURL request
+CURL_OUTPUT=`$CURL_BIN -s -m ${CHECK_TIMEOUT} http://${REMOTE_HOST}${ENKI_STATUS_URL} 2>&1`
+CURL_STATUS=$?
+
+# Ensure CURL ran successfully
+if [ $CURL_STATUS -ne 0 ]; then
+  echo -n "Health is CRITICAL (Cannot fetch http://${REMOTE_HOST}${ENKI_STATUS_URL})"
+  exit $STATE_CRITICAL
+fi
+
+# Parse the status response
+SERVER_HEALTH=`echo "$CURL_OUTPUT" |grep -e "^Health: [0-9]*$" |cut -s -d: -f2 |tr -d '[:alpha:][:punct:][:space:]'`
+SERVER_COMMENT=`echo "$CURL_OUTPUT" |grep -e "^Comment: " |cut -s -d: -f2-`
+
+# Make sure we got something for health
+if [ "${SERVER_HEALTH}x" == "x" ]; then
+  echo "Error parsing ENKI_Health!"
+  exit $STATE_UNKNOWN
+fi
+
+# Add a comment if returned by the server
+if [ "${SERVER_COMMENT}x" != "x" ]; then
+  SERVER_COMMENT=" MSG:${SERVER_COMMENT}"
+fi
+
+# Check the health tolerances
+if [ $SERVER_HEALTH -le $lwr_crit_threshold ]; then
+  NAGIOS_OUTPUT="Health is CRITICAL (${SERVER_HEALTH}%).${SERVER_COMMENT}"
+  CRIT_COUNT=1
+elif [ $SERVER_HEALTH -le $lwr_warn_threshold ]; then
+  NAGIOS_OUTPUT="Health is at WARNING level (${SERVER_HEALTH}%).${SERVER_COMMENT}"
+  WARN_COUNT=1
+else
+  NAGIOS_OUTPUT="Health is OK (${SERVER_HEALTH}%).${SERVER_COMMENT}"
+fi
+
+# Generate the proper exit status for nagios
+if [ "$CRIT_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_CRITICAL
+elif [ "$WARN_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_WARNING
+else
+   EXIT_STATUS=$STATE_OK
+fi
+
+# Print out status and exit
+echo -n "$NAGIOS_OUTPUT"
+exit $EXIT_STATUS
+

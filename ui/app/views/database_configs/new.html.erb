@@ -1,0 +1,7 @@
+<% set_html_title "Create New Database Configuration" %>
+<h1>New Database Config</h1>
+<% form_for(@database_config) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f } %> 
+<p><%= f.submit "Create" %></p>
+<% end %>
+<%= link_to 'List', database_configs_path %>

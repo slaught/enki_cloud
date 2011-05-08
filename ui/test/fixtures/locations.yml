@@ -1,0 +1,13 @@
+--- 
+nutdefault:
+  rack_position_bottom: 
+  rack: 
+  location_id: 1
+  datacenter_id: 2
+  rack_position_top: 
+obrdefault:
+  rack_position_bottom: 
+  rack: 
+  location_id: 2
+  datacenter_id: 3
+  rack_position_top: 

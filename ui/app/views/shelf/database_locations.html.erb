@@ -1,0 +1,26 @@
+<% set_html_title "Database Locations" %>
+<h1>Database Cluster</h1>
+
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Description</th>
+    <th>HA Hostname</th>
+<!--    <th>Listen Port</th> -->
+    <th>Databases</th>
+    <th>Cluster Node</th>
+    <th>Service</th>
+  </tr>
+<% for database_cluster in @database_clusters %>
+  <tr>
+    <td><%= link_to "#{database_cluster.version}/#{database_cluster.name}", database_cluster %></td>
+    <td><%=h database_cluster.description %></td>
+    <td><%=h database_cluster.service.ha_hostname %></td>
+<!-- <td><%=h database_cluster.service.localport  %></td> -->
+    <td><%=h database_cluster.database_names.map { |d| d.name }.join(', ') %></td>
+    <td><%=h database_cluster.service.clusters.first.nodes.map { |d| d.to_label }.join(', ') %></td>
+    <td><%=link_to database_cluster.service.url,  {:controller => 'service', :action => 'show', :id => database_cluster.service} %></td>
+  </tr>
+<% end %>
+</table>
+

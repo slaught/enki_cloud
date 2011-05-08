@@ -1,0 +1,216 @@
+#!/bin/bash
+#
+# Michael Vallaly (Feb 2009) Ver 2.0
+#
+# Description:
+#
+# This script checks the health of a HP Procurve switch.
+#
+# Usage: ./check_procurve -i <switch_ip> -c(pu) -f(ans) -m(emory) -p(ower supplies)
+#
+# Examples:
+#
+# ./check_procurve -i 10.32.0.4 -m
+#  Memory Utilization 27.0% (OK)
+#
+# Another Examples:
+#
+# ./check_procurve -i 10.32.0.4 -c
+#  CPU Utilization 1% (OK)
+#
+# ./check_procurve -i 10.32.0.4 -p 
+#  Power Supply 1 (OK) - Power Supply 2 (OK) - Power Supply 3 (OK) - Power Supply 4 (OK)
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+BC_BIN="/usr/bin/bc"
+SNMPGET_BIN="/usr/bin/snmpget"
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+SENSOR_BASE_OID=".1.3.6.1.4.1.11.2.14.11.1.2.6.1"
+SENSOR_FAN_OID="1"
+SENSOR_PWR_OID="2 3 4 5"
+
+CPU_STATUS_OID=".1.3.6.1.4.1.11.2.14.11.5.1.9.6.1.0"
+CPU_WARN="40"
+CPU_CRIT="80"
+
+MEM_USED_OID=".1.3.6.1.4.1.11.2.14.11.5.1.1.2.2.1.1.7.1"
+MEM_TOTAL_OID=".1.3.6.1.4.1.11.2.14.11.5.1.1.2.2.1.1.5.1"
+MEM_WARN="40"
+MEM_CRIT="80"
+
+#########################################################################################
+
+CRIT_COUNT=0
+WARN_COUNT=0
+UNKN_COUNT=0
+
+CHECK_TYPE=""
+
+OUTPUT_COUNTER=0
+
+# Check for script dependencies
+for bindep in $BC_BIN $SNMPGET_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit $STATE_UNKNOWN
+  fi
+done
+
+usage="Usage: ./check_procurve -i <switch_ip> -u <username> -p <passowrd> -c(pu) -f(ans) -m(emory) -P(ower supplies)"
+
+while getopts "cfi:mp:Pu:" options; do
+  case $options in
+    c ) CHECK_CPU=cpu;;
+    f ) SENSOR_OIDS+=" $SENSOR_FAN_OID";;
+    i ) ip="$OPTARG";;
+    m ) CHECK_MEM=mem;;
+    p ) password="$OPTARG";;
+    P ) SENSOR_OIDS+=" $SENSOR_PWR_OID";;
+    u ) username="$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 7 ]; then
+    echo $usage
+    exit 1
+fi
+
+# Set SNMP options
+SNMP_OPT="-OnQ -v3 -l authPriv -a SHA -u $username -A $password -x AES -X $password"
+
+## CPU Check
+
+if [ "$CHECK_CPU" == "cpu" ]; then
+  SNMP_OUTPUT=`$SNMPGET_BIN $SNMP_OPT $ip $CPU_STATUS_OID 2>&1`
+  if [ $? -ne 0 ]; then 
+    echo "Error - $SNMP_OUTPUT"
+    exit $STATE_UNKNOWN
+  fi
+  cpu_util=`echo $SNMP_OUTPUT |sed -e 's/ = /,/g' |cut -d, -f2`
+
+  if [ "$cpu_util" -gt "$CPU_CRIT" ]; then
+	status="Critical"
+	let "CRIT_COUNT += 1"
+  elif [ "$cpu_util" -gt "$CPU_WARN" ]; then
+        status="Warning"
+        let "WARN_COUNT += 1"
+  else 
+	status="OK"
+  fi
+    
+  # Multi-variable separation
+  if [ "$OUTPUT_COUNTER" -ne 0 ]; then
+    output+=`echo -e " - "`
+  fi
+
+  # Print the output
+  output+=`echo -e "CPU Utilization $cpu_util% ($status)"`
+
+  # Increment the output counter
+  let OUTPUT_COUNTER="$OUTPUT_COUNTER + 1"
+
+fi
+
+## Memory Check
+
+if [ "$CHECK_MEM" == "mem" ]; then
+  SNMP_OUTPUT=`$SNMPGET_BIN $SNMP_OPT $ip $MEM_TOTAL_OID 2>&1`
+  if [ $? -ne 0 ]; then
+    echo "Error - $SNMP_OUTPUT"
+    exit $STATE_UNKNOWN
+  fi
+
+  mem_total=`echo $SNMP_OUTPUT |sed -e 's/ = /,/g' |cut -d, -f2`
+  mem_used=`$SNMPGET_BIN $SNMP_OPT $ip $MEM_USED_OID |sed -e 's/ = /,/g' |cut -d, -f2`
+
+# Calculate our memory usage as a percent
+  mem_percent=`echo " ($mem_used / $mem_total) * 100" |$BC_BIN -l |cut -c -4`
+ 
+if [[ "$(echo "$mem_percent > $MEM_CRIT" |$BC_BIN )" -eq "1" ]]; then
+        status="Critical"
+        let "CRIT_COUNT += 1"
+  elif [[ "$(echo "$mem_percent > $MEM_WARN" |$BC_BIN)" -eq "1" ]]; then
+        status="Warning"
+        let "WARN_COUNT += 1"
+  else
+        status="OK"
+  fi
+
+  # Multi-variable separation
+  if [ "$OUTPUT_COUNTER" -ne 0 ]; then
+    output+=`echo -e " - "`
+  fi
+
+  # Print the output
+  output+=`echo -e "Memory Utilization $mem_percent% ($status)"`
+
+  # Increment the output counter
+  let OUTPUT_COUNTER="$OUTPUT_COUNTER + 1"
+
+fi
+
+## Sensor Check
+
+# Print out our response
+for oid in $SENSOR_OIDS; do
+
+  SNMP_OUTPUT=`$SNMPGET_BIN $SNMP_OPT $ip $SENSOR_BASE_OID.7.$oid 2>&1`
+  if [ $? -ne 0 ]; then
+    echo "Error - $SNMP_OUTPUT"
+    exit $STATE_UNKNOWN
+  fi
+
+  desc=`echo $SNMP_OUTPUT |sed -e 's/ = /,/g' |cut -d, -f2 |tr -d \" |sed -e 's/Sensor//g'`
+  status=`$SNMPGET_BIN $SNMP_OPT $ip $SENSOR_BASE_OID.4.$oid |sed -e 's/ = /,/g' |cut -d, -f2`
+ 
+  # Multi-variable separation
+  if [ "$OUTPUT_COUNTER" -ne 0 ]; then
+    output+=`echo -e " - "`
+  fi
+  
+  # Print description
+  output+=`echo -e "$desc"`
+
+  # Convert the HP SNMP values to NAGIOS format 
+  case $status in
+    4 ) output+=`echo -e " (OK)"`;;
+    5 ) output+=`echo -e " (Not Present)"`;;
+    2 ) output+=`echo -e " (Failed)"`
+        let "CRIT_COUNT += 1";;
+    3 ) output+=`echo -e " (Warning)"`
+        let "WARN_COUNT += 1";;
+    * ) output+=`echo -e " (Unknown)"`
+        let "UNKN_COUNT += 1";;
+  esac
+
+  # Increment the loop counter
+  let OUTPUT_COUNTER="$OUTPUT_COUNTER + 1"
+
+done
+
+
+# Generate Exit Status and output
+   if [ "$CRIT_COUNT" -ne 0 ]; then
+      EXIT_STATUS=$STATE_CRITICAL
+ elif [ "$WARN_COUNT" -ne 0 ]; then
+      EXIT_STATUS=$STATE_WARNING
+ elif [ "$UNKN_COUNT" -ne 0 ]; then
+      EXIT_STATUS=$STATE_UNKNOWN
+ else
+      EXIT_STATUS=$STATE_OK
+   fi
+
+echo $output
+exit $EXIT_STATUS

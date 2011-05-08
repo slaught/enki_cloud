@@ -1,0 +1,170 @@
+#!/bin/bash
+
+# Michael Vallaly (April '10) Ver 2.0
+
+# This script checks zonefiles and ensures serial number updates occur for changed files
+
+CHMOD_BIN="/bin/chmod"
+CHOWN_BIN="/bin/chown"
+EGREP_BIN="/bin/egrep"
+DIFF_BIN="/usr/bin/diff"
+FIND_BIN="/usr/bin/find"
+RNDC_BIN="/usr/sbin/rndc"
+RSYNC_BIN="/usr/bin/rsync"
+SED_BIN="/bin/sed"
+
+P4_BIN="/usr/bin/p4"
+P4CONFIG="/data/.p4config"
+
+ZONE_INCREMENT_BIN="/etc/enki/scripts/dns-increment"
+
+CONF_DIR="/var/chroot/bind9/etc/bind"			# Directory that contains the running configs
+BASE_CONF_DIR="/data/dns-config/"			# Directory that contains then deployed configs
+
+ZONE_DIR="/var/chroot/bind9/var/cache/bind" 		# Directory that contains the running zones
+BASE_ZONE_DIR="/data/dns-zones/"  			# Directory that contains the deployed zones  
+
+##########################################################################################################
+DRY_RUN=0
+
+usage="USAGE: $0 [-n]\n"
+usage+="Commits changes made to BIND and zones from Perforce to the local host\n"
+usage+="\t-n\tPerform a dry-run\n"
+
+while getopts "nh" options; do
+  case $options in
+    n ) DRY_RUN=1;;
+    ?,h ) echo -e $usage
+        exit 1;;
+    * ) echo -e $usage
+        exit 1;;
+  esac
+done
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser permissions required to update DNS!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $CHMOD_BIN $CHOWN_BIN $EGREP_BIN $DIFF_BIN $FIND_BIN $RNDC_BIN $RSYNC_BIN $P4_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Detect lock file and quit if it exists
+PID_FILE=/var/run/`basename $0`.pid
+if [ -f ${PID_FILE} ]; then
+  echo "`basename $0` is already running [`cat ${PID_FILE}`]"
+  exit -1
+fi
+
+# Create the lock file
+echo $$ > ${PID_FILE}
+
+# Make trap to remove lock file upon exit
+function _exit() {
+  unlink ${PID_FILE}
+}
+trap _exit EXIT
+
+echo -n "Checking out configuration... "
+# Perforce non-sense here
+export P4CONFIG
+. ${P4CONFIG}
+echo ${P4PASSWD} |${P4_BIN} login
+# update DNS changes from revision repository
+if [ $DRY_RUN -eq 1 ]; then
+  ${P4_BIN} sync -n
+else
+  ${P4_BIN} sync
+fi
+${P4_BIN} logout
+echo "done."
+
+# Set some counters
+update_count=0
+update_status=0
+
+# Install the configuration files
+echo -n "Installing configuration files.. "
+if [ $DRY_RUN -eq 1 ]; then
+  ${RSYNC_BIN} -ai --dry-run ${BASE_CONF_DIR}/* ${CONF_DIR}/
+else
+  ${RSYNC_BIN} -ai ${BASE_CONF_DIR}/* ${CONF_DIR}/
+fi
+echo "done."
+
+# Fixup config permissions
+$CHOWN_BIN -R bind:bind ${ZONE_DIR} ${CONF_DIR}
+$CHMOD_BIN -R u+w ${ZONE_DIR} ${CONF_DIR}
+$CHMOD_BIN 440 ${CONF_DIR}/rndc.key
+
+# Loop over all the zonefiles in our base zone directory
+for zone in `$FIND_BIN $BASE_ZONE_DIR -mindepth 1 -type f`; do
+
+  zonefile=`echo $zone |$SED_BIN -e "s|^${BASE_ZONE_DIR}||g"`
+  loop_status=0
+
+  # If there are changes (negating serial numbers) do something
+  if [ "`$DIFF_BIN ${BASE_ZONE_DIR}/${zonefile} ${ZONE_DIR}/${zonefile} -N -y -b --suppress-common-lines -W 200 2> /dev/null |$EGREP_BIN -v -e '[[:digit:]]{10}[[:space:]]*;' -e '%SERIAL%[[:space:]]*;' |wc -l`" -gt "0" ]; then
+
+    if [ $DRY_RUN -eq 1 ]; then
+      echo -n "Dryrun - Zonefile (${zonefile}) has changed! Updating configuration.. "
+    else
+      echo -n "Zonefile (${zonefile}) has changed! Updating configuration.. "
+      $ZONE_INCREMENT_BIN ${BASE_ZONE_DIR}/${zonefile}
+      loop_status=$?
+      update_count=$((update_count + 1))
+    fi
+    
+  # Install new zonefiles
+  elif [ ! -e ${ZONE_DIR}/${zonefile} ]; then
+
+    if [ $DRY_RUN -eq 1 ]; then
+      echo -n "Dryrun - Installing new DNS zonefile (${zonefile}).. "
+    else
+      echo -n "Installing new DNS zonefile (${zonefile}).. "
+      $ZONE_INCREMENT_BIN ${BASE_ZONE_DIR}/${zonefile}
+      loop_status=$?
+      update_count=$((update_count + 1))
+    fi
+ 
+  else
+
+    # No changes needed just skip the zonefile 
+    continue 
+
+  fi
+
+  # We are done
+  update_status=$((loop_status + update_status))
+  if [ $loop_status -eq 0 ]; then
+    echo "done."
+  fi
+
+done
+
+# Check if our configs have changed
+if [ $update_count -gt 0 ]; then
+
+  # Check if we had errors
+  if  [ $update_status -eq 0 ]; then
+
+    echo "Restarting BIND.."
+    if [ $DRY_RUN -eq 0 ]; then
+      # Reload Nameserver Daemon
+      $RNDC_BIN reload
+    fi
+
+  else
+    echo "Errors occured during update.. Please manually resolve zone problems and try again.."
+    exit 1
+
+  fi
+else
+  echo "System up-to-date.."
+fi

@@ -1,0 +1,1351 @@
+cnu-it-cfg-web (1.6.1) stable; urgency=low
+
+  * task 323417 - Fix mgmt IP allocation on node creation emergency fix
+    * change Node.create_by_node_id to use Network instead of Cluster
+    * Make sure that we test for node creation success message
+  * use node.fqdn for domU config file
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 07 Mar 2011 19:14:47 -0600
+
+cnu-it-cfg-web (1.6.0) stable; urgency=low
+
+    * Network Model, phase 2
+      * code to migrate production database to new network model.
+      * rewirte search query to join ip_addresses table
+      * make mgmt_ip_address using ip_addresses table
+      * Add acl support to networks and nodes
+      * SQL change mgmt_ip_address column
+      * add acl tables
+      * migrate ip_addresses to new structure
+    * Default sort by ip range in networks/list page
+    * Make Node Partial in Clusters sortable
+    * IP addresses in view tables now sort properly (cidr is not handled however)
+    * generate cassandra service.checks
+    * Sort the pdus, switchports and clusters in drop downs on the node show page
+    * rake db:* changes
+      *: psql quiets its output
+      * rake db:sqlbuild file=  : option to use a different schema file
+    * fixes for fix_table_acls.sql
+      * Limit tables to fix to only in the cnu_net schema
+      * remove 'grant select' line
+    * removed pdus per task #304411
+    * edit comments to prepare for open sourcing .
+    * clean up output from old headrtbeat code
+    * switch label for interconnect network type changed to match production.
+    * remove cluster/dns method
+    * FIXME: mgmt uniqueness checks need to be re-written for the new ip_addresses table
+    * FIXME: added check to try and figure out why xenmapping tests sometiems fail.
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Thu, 03 Mar 2011 20:10:55 -0600
+
+cnu-it-cfg-web (1.5.4) stable; urgency=low
+
+  * added v2 service checks, per node
+  * added per datacenter csv as well as fixed pagination thing
+  * added csv view for node/list
+  * catch duplicate local port postgres error when updating services
+  * add links to nodes for node partials
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Tue, 15 Feb 2011 14:12:08 -0600
+
+cnu-it-cfg-web (1.5.3) stable; urgency=low
+
+  * added sudo_user check in config_layout.sh to keep people from calling gen_layout with sudo and breaking user logging in both git and the config db
+  * Fix to detect gen_layout/root user in Versions table, hence fixing the Activity page
+  * Integration test sanity check method to test for view errors
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Thu, 13 Jan 2011 18:28:18 -0600
+
+cnu-it-cfg-web (1.5.2) stable; urgency=low
+
+  * changes to set_snmp script and added associated yaml file and async task
+  * VLAN push button on physical nodes
+  * fixed ip search bug. acunote task: 276955
+  * Node page change: can now remove node from clusters
+  * made version times more person friendly.
+  * Added link to Push page on admin shelf
+  * Added cron jobs for populating xen mappings for NUT and NAV
+  * added link to resque status page
+  * Introduction of object-based decl-authorization rules
+  * Ability for DBAs to add/remove postgres services from clusters
+    * Dropdown in Services partial on Cluster show page only shows services the user is permitted to add
+    * Removed already added services from the dropdown as well
+    * Fixed Stale datacenters persisting during testing:
+      * Added 'meta seed data' during db:sqlbuild for a few extra random DCs
+      * blueprints that need datacenters select at random from existing DCs
+  * Use I18n for app-wide "constants"
+  * Catch duplicate local port postgres error when creating services
+  * more validation to entered network ranges
+  * Fixing the LiveXenMapping node removal bug
+  * generate san.paths file for 3par nodes
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Fri, 07 Jan 2011 18:12:01 -0600
+
+cnu-it-cfg-web (1.5.1) stable; urgency=low
+
+  * Added Rcache library. It caches basic datastructures in redis.
+  * Included a bugfix to strip out bad data and quote all hostnames when reading in xen mappings
+  * SQL and model for live xen mappings in database
+  * New xen live mappings page and associated scripts
+  * cron.daily now uses new xen_map script
+  * Functional tests for node controller and bug fixes from them
+  * Async job simplified and email on failures
+  * List all ports on a switch node page
+  * Changes to node page: Simplify display and reduce redundant data.
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Mon, 27 Dec 2010 17:08:31 -0600
+
+cnu-it-cfg-web (1.5.0) stable; urgency=low
+
+  * create initiatorname.iscsi file for SAN nodes.
+    track node iqns
+    
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Tue, 21 Dec 2010 16:08:31 -0600
+
+cnu-it-cfg-web (1.4.9) stable; urgency=low
+
+  * 3par_mgmt -- v1.5:
+    * Migrating to cleaner namespace
+    * Removing dependency on config/environment
+    * Reduced code redundency  
+  * Adding shoulda gem for code tests
+  * list queues being managed by resque.
+  * cron wrapper script to queue async tasks.
+  * cron.d file for cnu-it-cfg-web
+  * rampart service: Explicitly create a tcp and udp service when proto~'all' and a
+    port is specified, Don't disable port field when protocol == "All" is chosen
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 15 Dec 2010 14:34:33 -0600
+
+cnu-it-cfg-web (1.4.8) stable; urgency=low
+
+  * Kris is an idiot. Fixing permissions errors et al (logging)
+
+ -- Kristofer M White <kristofer@enovafinancial.com>  Thu, 02 Dec 2010 23:15:30 -0600
+
+cnu-it-cfg-web (1.4.7) stable; urgency=low
+
+  * Fixing load path
+  * Setting 3par_mgmt to default to production mode 
+  * Node search by mac address.
+
+ -- Kristofer M White <kristofer@enovafinancial.com>  Thu, 02 Dec 2010 22:29:14 -0600
+
+cnu-it-cfg-web (1.4.6) stable; urgency=low
+
+  * Fixing 3par_mgmt script for debianization
+
+ -- Kristofer M White <kristofer@enovafinancial.com>  Thu, 02 Dec 2010 19:24:35 -0600
+
+cnu-it-cfg-web (1.4.5) stable; urgency=low
+
+  * 3par_mgmt v1.0
+  * Adding net-ssh to the app
+  * Do not want net-ssh enabled yet
+  * Changes to fix snapshots, exporting, and envs
+  * Adding 3par_mgmt script and tweaks to isimud library
+  * Adding CNU::Isimud for san communication
+
+ -- Kristofer M White <kristofer@enovafinancial.com>  Thu, 02 Dec 2010 17:54:36 -0600
+
+cnu-it-cfg-web (1.4.4) stable; urgency=low
+
+  * Added resque-web, nested in /resque
+  * added dependencies for resque-web sinatra app
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 19 Nov 2010 15:40:56 -0600
+
+cnu-it-cfg-web (1.4.3.3) stable; urgency=low
+
+  * Third time is the charm?
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 18 Nov 2010 17:39:03 -0600
+
+cnu-it-cfg-web (1.4.3.2) stable; urgency=low
+
+  * Fixed another push bug. Josh sucks. 
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 18 Nov 2010 17:30:06 -0600
+
+cnu-it-cfg-web (1.4.3.1) stable; urgency=low
+
+  * JOSH IS DUMB. Fixed push bug...
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 18 Nov 2010 17:22:19 -0600
+
+cnu-it-cfg-web (1.4.3) stable; urgency=low
+
+  * Make sure service's check_url is not a full url path
+  * Add new service checks functionality - create service.checks.v2 file
+  * Use 'state' service type for lbs
+  * new 'fan' node type (passed on 'toaster')
+  * Fixed queue bug in Pushpdu
+  * Added PUSH controller and button(s).
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 18 Nov 2010 17:12:40 -0600
+
+cnu-it-cfg-web (1.4.2.2) stable; urgency=low
+
+  * Josh is dumb. Fixed async tasks...
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Tue, 16 Nov 2010 17:31:40 -0600
+
+cnu-it-cfg-web (1.4.2.1) stable; urgency=low
+
+  * forgot super class for async tasks. super. 
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Tue, 16 Nov 2010 17:02:52 -0600
+
+cnu-it-cfg-web (1.4.2) stable; urgency=low
+
+  * Networks show page changes to include related nodes and ip addresses
+  * Replace validate_on_create and update line with a single validate line
+  * adding generate_iscsi_name method
+  * Adding in additional tests
+  * async push scripts
+  * cleaned up 'scary' output for set_snmp and made verbose library output only print when actually verbose
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Tue, 16 Nov 2010 16:42:10 -0600
+
+cnu-it-cfg-web (1.4.1) stable; urgency=low
+
+  * Add foreign key constraints
+  * Added 'back' link for ramparts new page
+  * Renamed folder with shared partials from helpers/ to shared/ to conform with standard
+  * Prevent non rampart-admin from editing home network when a network ip address has already been assigned
+  * Cleaned up show and destroy links
+  * Added "10.15.254.0/28::::ipencap:vlan500" line to net.services configs
+  * all changes/files to deploy resque/redis integration.
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Wed, 10 Nov 2010 21:23:57 -0600
+
+cnu-it-cfg-web (1.4.0) stable; urgency=low
+
+  * Rampart changes to use network model
+    * Auto assignment of locale and public IPs
+    * enforce unique IPs across ramparts
+    * enforce unique services per rampart
+    * enforce presence of ips when has ... ip? is checked
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 09 Nov 2010 19:54:01 -0600
+
+cnu-it-cfg-web (1.3.9) stable; urgency=low
+
+  * Removing libjson-ruby from the control file and including it in the build
+  * Added link to NETWORKS
+  * Adding the libjson-ruby dependency 
+
+ -- Kristofer M White <kwhite1@jarvis.localdomain>  Fri, 05 Nov 2010 18:12:31 -0500
+
+cnu-it-cfg-web (1.3.8) stable; urgency=low
+
+  * Adding PDU connections to node view
+  * capybara Node class rename patch file
+  * Renamed Capybara's 'Node' to 'CNode'. Have yet to test capybara itself, but all integration and javascript tests are running just fine
+  * changes to ASAs genearted acls.
+  * change ownership
+  * add missing indexes
+  * new role: network_admin.
+  * Adding nginx dependency
+  * Added pure gems for redis and redis-namespace. Added resque plugin.
+  * Make clear_empty_attrs ignore 'false' boolean attributes
+  * Merge branch 'master' of git.example.com:cnu_it_web
+  * Moved db stuff from Rakefile into db.rake and refactored and improved code
+  * bugs in ip(), gw(), netwmask() working with new mgmt_ip_address implementation
+  
+  
+ -- Kristofer M White <kwhite1@enovafinancial.com>  Fri, 05 Nov 2010 17:29:57 -0500
+
+cnu-it-cfg-web (1.3.7) stable; urgency=low
+
+  * Networks are readable by anyone
+  * Tests for mgmt_ip_address_must_be_unique custom validation
+
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 02 Nov 2010 21:31:57 +0000
+
+cnu-it-cfg-web (1.3.6) stable; urgency=low
+
+  * Emergencny fix for partial node/_san.html.erb view
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 01 Nov 2010 19:53:34 +0000
+
+cnu-it-cfg-web (1.3.5) stable; urgency=low
+
+  * push-itcfg 
+    - handles rolling out config files to various hosts 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 01 Nov 2010 15:11:57 +0000
+
+cnu-it-cfg-web (1.3.4) stable; urgency=low
+
+  * Emergency fix: missing San class ip_range/vlan methods
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Sun, 31 Oct 2010 02:52:10 +0000
+
+cnu-it-cfg-web (1.3.3) stable; urgency=low
+
+  * Refacter code. No new features
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Sat, 30 Oct 2010 18:54:29 +0000
+
+cnu-it-cfg-web (1.3.2) stable; urgency=low
+
+  * Emergency fix: remove unneeded mgmt ip address unique check on SanNode
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 29 Oct 2010 18:00:22 +0000
+
+cnu-it-cfg-web (1.3.1) stable; urgency=low
+
+  * Emergency fix: san/show add_node/remove_node fixes.
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 29 Oct 2010 00:40:39 +0000
+
+cnu-it-cfg-web (1.3.0) stable; urgency=low
+
+  * Migrate SANs to use network model.
+    
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 28 Oct 2010 23:27:58 +0000
+
+cnu-it-cfg-web (1.2.0) stable; urgency=low
+
+  * Network model:
+    * better router support: allow routers to have switch ports, pdus and serial consoles.
+    * working edit/create for networks.
+  * Fixed bug where san disk would get incremented to sda instead of sdb when a sda1 file disk exists
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 27 Oct 2010 19:03:59 -0500
+
+cnu-it-cfg-web (1.1.9) stable; urgency=low
+
+  * network model!
+    * includes IpAddress, Network and Network type models and code.
+    * basic network create/edit/delete
+  * Added clusters that are not load balanced to surealived config
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 18 Oct 2010 16:30:36 -0500
+
+cnu-it-cfg-web (1.1.8) stable; urgency=low
+
+  * Changed all testers to HTTP in surealived config
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 18 Oct 2010 11:58:52 -0500
+
+cnu-it-cfg-web (1.1.7) stable; urgency=low
+
+  * added mandatory but empty host parameter to surealived config 
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 18 Oct 2010 11:19:13 -0500
+
+cnu-it-cfg-web (1.1.6) stable; urgency=low
+
+  * Fixed rampart config script to accept _rampart_ id instead of _node_ id 
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 13 Oct 2010 16:50:50 -0500
+
+cnu-it-cfg-web (1.1.5) stable; urgency=low
+
+  * Added IP columns to rampart list page
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 13 Oct 2010 15:29:23 -0500
+
+cnu-it-cfg-web (1.1.4) stable; urgency=low
+
+  * rampart configs script now accepts node id input argument
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 13 Oct 2010 14:36:23 -0500
+
+cnu-it-cfg-web (1.1.3) stable; urgency=low
+
+  * Fixed bug in Version.who
+  * Fixed invalid template "all external HA services" port should be null, not 80
+  * Fixed bug where adding an iscsi disk to a virtual node with file disk sda1 assigns
+    an sda2 block name instead of sdb. 
+  * rampart config gen changes:
+    * Sort by DNATs first then SNATs
+    * Remove /32's from last IPs
+    * added double quotes and comments
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 12 Oct 2010 12:06:22 -0500
+
+cnu-it-cfg-web (1.1.2) stable; urgency=low
+
+  * rake console
+  * added 'last changes' to Node page
+  * changed permissions for editing of serial number and service tag
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Wed, 06 Oct 2010 14:49:48 -0500
+
+cnu-it-cfg-web (1.1.1) stable; urgency=low
+
+  * fixed bugs in vlan switch tool
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Mon, 04 Oct 2010 17:05:53 -0500
+
+cnu-it-cfg-web (1.1.0) stable; urgency=low
+
+  * roles needed to crease a new db clsuter
+  * js sparkline library installation
+  * make xen compare page readable by guest
+  * rework warnings page to be less intensive
+  * increase error output from ldirectord checks
+  * fixes to handle edge cases for new displays all tests pass.
+  * moved bootstrap management to sysadmin role
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Mon, 04 Oct 2010 15:14:13 -0500
+
+cnu-it-cfg-web (1.0.15) stable; urgency=low
+
+  * Sorted clusters and nodes in surealived config
+  * Made form tables in node_nics and node_disks partials look more like actual forms
+  * hostnames CAN start with numbers now, as it should have been
+  * Templates for common rampart services (bug #245422)
+    * db changes:
+      + description field on rampart_services
+      + rampart_service_templates table
+  * Auto sort rampart/list by hostname (as requested by Pat)
+  * Sorted dropdown node hostname entries in ramparts (as requested by Pat)
+  * Script that prints out ramparts config lines
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Thu, 30 Sep 2010 14:29:57 -0500
+
+cnu-it-cfg-web (1.0.14) stable; urgency=low
+
+  * added back the lbstatus_config files.
+    * removed the old lb status.html page
+  * added a list of recent changes and a break down of top ten users.
+    * (http://somewhere.example.com/shelf/activity)
+  * Added links to nodes and changed alt text for unmapping guests
+  * Added nice error when a domU's OS is undefined
+  * Surealived config generation feature (bug# 234696)
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Thu, 23 Sep 2010 17:54:14 -0500
+
+cnu-it-cfg-web (1.0.13) stable; urgency=low
+
+  * Fixed problem while deleting nodes because its disks don't get deleted correctly
+  * Fixed bug while creating a virtual node without defining an OS
+  * added 7 second timeout and upped the retries to 10 in determining xen live mapping cron job
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 21 Sep 2010 17:18:25 -0500
+
+cnu-it-cfg-web (1.0.12) stable; urgency=low
+
+  * made warnings include non-physical machines. things like switches.
+  * Change ip address in the cluster_nodes join table when the mgmt ip on a node is changed
+    * also correctly shows in the "clusters" section of the node page (requires refresh though)
+  * added script to do mass network/scs plugging
+  * Add all xen management features to the xen compare page (bug #239420)
+    * It is now the default place to make xen changes.
+  * allow json output for services list
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Fri, 17 Sep 2010 17:43:33 -0500
+
+cnu-it-cfg-web (1.0.11) stable; urgency=low
+
+  * Added optimizations to CDN Nginx config files
+  * Added datacenter filtering to system warnings
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Thu, 16 Sep 2010 18:14:55 -0500
+
+cnu-it-cfg-web (1.0.10) stable; urgency=low
+
+  * Quickfix: Actually create default disk when a disk is added to a domU
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Wed, 15 Sep 2010 15:47:28 -0500
+
+cnu-it-cfg-web (1.0.9) stable; urgency=low
+
+  * Fixed paths in CDN configs (was not included in last patch) 
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 14 Sep 2010 13:29:34 -0500
+
+cnu-it-cfg-web (1.0.8) stable; urgency=low
+
+  * Fixed paths in CDN configs 
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 14 Sep 2010 13:22:58 -0500
+
+cnu-it-cfg-web (1.0.7) stable; urgency=low
+
+  * Appended "nginx-" to CDN config filenames
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 14 Sep 2010 13:02:55 -0500
+
+cnu-it-cfg-web (1.0.6) stable; urgency=low
+
+  * Added paper trail tracking for rampart
+  * Generated Nginx configs for CDN services
+  * on the compare live xen page, make 'red squares' be buttons to auto assign a domU to the domO in question. (bug #235717)
+  * Allow editing of xen guests from the show node page of a dom0
+    * and editing of a virtual node's xen host from the node page itself
+  * Included SNMP VLAN libraries and tools
+  * Add default file disk to a new virtual node right when its created, instead of waiting until a 2nd disk is added (bug #228578)
+  * Fix no assigned load balancers system warning to only include clusters which have no load balancers on their VLAN (bug #226816)
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 14 Sep 2010 12:20:00 -0500
+
+cnu-it-cfg-web (1.0.5) stable; urgency=low
+
+  * Fixed /index routing for cluster and service
+  * Added descriptive titles to views (bug #225979)
+  * Generated DNS files for mgmt networks (bug #233014)
+  * Updated rampart controller to meet new specifications
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Wed, 01 Sep 2010 18:43:07 -0500
+
+cnu-it-cfg-web (1.0.4) stable; urgency=low
+
+  * Added support for generating windows domU configs (bug #157161)
+    * Fixed showing default disks for Windows virtual nodes as "hda1" instead of "sda1"
+  * Added RAMPART Controller/Views/Model/Etc
+  * Move "disk.block_name" to the node_disks table (bug #227530)
+  * display archive mode for db cluster
+  * modify db:sqlbuild to take an option 'db=test_db_name'
+    Default is still cnu_it_test. Also fixed production schema
+    dump to go to db/cnu_it.sql
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 30 Aug 2010 13:34:21 -0500
+
+cnu-it-cfg-web (1.0.3) stable; urgency=low
+
+  * Normalized disks table (bug #217452)
+    * added auto-assigning of block names for new disks
+    * changed Disks section in node view to show normalized data
+    * Cleaned up existing disk names
+    * added read_only, mount_options, filesystem, block_name fields to disks table
+    * altered existing rows to fit with new schema
+  * add database cluster archive flag
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Fri, 20 Aug 2010 18:02:33 -0500
+
+cnu-it-cfg-web (1.0.2) stable; urgency=low
+
+  * fixed redirect error when no HTTP_REFERER is present
+  * Fixed lingering flash[]es on pages (bug #222992)
+  * Moved 'Network Ports' link to admin page
+  * Reduced padding on menu elements
+  * markup changes to add alt and title text to image links
+  * style changes fix menu spillover
+  * fixed failing functional tests due to markup changes
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Wed, 18 Aug 2010 17:03:23 -0500
+
+cnu-it-cfg-web (1.0.1) stable; urgency=low
+
+  * Holy markup and CSS updates, Batman!
+  * jquery and jquery-ui urls now load locally instead of from google
+  * rewrote the xen mappings comparison page. added occupancy percentage data
+  * added option to add a node to a cluster from the node show page
+  * Node search results are now sorted by hostname (bug #220588)
+  * build:publish now pushes the debian/changelog commit if there are no other pending commits (bug #220791)
+  * Added a SUPER HACK to pull up missing services from /service/show_name
+  * Made duplicate plug errors for pdus and scs more readable (bug #220605)
+  * Access denied pages are now flash errors instead of stand alone, empty pages
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Mon, 16 Aug 2010 15:34:28 -0500
+
+cnu-it-cfg-web (1.0.0) stable; urgency=low
+
+  * database cluster management features v3
+    * fix database cluster to genearate a db config for pg8.3
+      using default policy for config settings
+    * add support for archive mode that was missed. 
+    * additional test coverage
+  * Made cluster controller flash a system warning for active clusters that have no assigned load balancers
+    * Added an element in the application-wide view to display item-specific system warnings
+    * Added shelf warnings for active clusters that have no load balancers assigned
+  * during find and setting of file modes handle filenames with spaces
+  *  Fixed errors in printing descriptions in versions_changelog.rb
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Fri, 06 Aug 2010 17:25:00 -0500
+
+cnu-it-cfg-web (0.9.9) stable; urgency=low
+
+  * Fixed nilClass user bug in gen_domU_config "last changed" info
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Tue, 03 Aug 2010 17:18:55 -0500
+
+cnu-it-cfg-web (0.9.8) database configs v2stable; urgency=low
+
+  * fix 8.4 config generation. 
+  * Added "last changed by who/when" info to domU configs
+    (This change was not included in the previous version)
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 02 Aug 2010 20:25:10 -0500
+
+cnu-it-cfg-web (0.9.7) stable; urgency=lowdatabase configs v2
+
+  * a shelf listing for showing database clusters, name and what HA hostname and what physical machine it is attached to.
+  * increase database name size from 16 to 32
+  * Added "last changed by who/when" info to domU configs
+
+ -- Suan-Aik Yeo <syeo@enovafinancial.com>  Mon, 02 Aug 2010 19:37:34 -0500
+
+cnu-it-cfg-web (0.9.6) stable; urgency=lowdatabase configs v2
+
+  * Temporary fix for PDU bug rendering nodes with wrong node type/model
+  * Removed serial # from node list view
+  * Fixed index action when table is empty in machine_controller
+  * Fixed update and index actions in SAN controller
+  * Added field for editing Service description field and cosmetic changes
+  * changed debian rules to install crons
+  * xen mapping for dc1 is now run once daily via cron
+
+ -- suan <syeo@syeo-laptop>  Fri, 30 Jul 2010 16:37:36 -0500
+
+cnu-it-cfg-web (0.9.5) stable; urgency=lowdatabase configs v2
+
+  * remove test config files from package
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Tue, 27 Jul 2010 08:33:41 -0500
+
+cnu-it-cfg-web (0.9.4) stable; urgency=lowdatabase configs v2
+
+  * database cluster management features v2
+     - add remove edit db clusters, database names and configs
+     - associate database names, db configs and services with a cluster
+     - fix database cluster listing and edit drop down
+  * new coloring for forms to signal focus
+  * changes for new LB status page.
+    * file name 'clusters.json' and output to include list of load balancers.
+    * also 'rawblobs.json' to include both OBR and NUT for testing
+    * cluster.json has new format and is printed readable
+  * test enhancements 
+    * tools to do a fake db load so gen_layout can run
+  * sort the dirs array so md5deep output should be more consistent
+  * remove old lbstatus txt files. remove heartbeat xml.
+  * change build rules to exclude test and test related directories.
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Tue, 27 Jul 2010 07:46:30 -0500
+
+cnu-it-cfg-web (0.9.3) stable; urgency=low
+
+  * add support to model postgres databases and clusters
+    - manage database clusters, database names 
+    - manage basic postgresql.conf settings
+  * new data files for the new lb status page.
+    rawblobs: clusters only
+    cluster.js: load balancers and clusters
+  * new udev rule add attr{type}==1 to close out bug
+  * bin/versions_changelog.rb 
+    change to have more specific info based on type of object changed.
+    remove extra newlines
+  * turn off raise notice in IP allocation function
+  * fixs for rails 2.3 to run without a bunch of deprecation message
+    - remove message about plugins
+    - fix controller tests with new assert_redirect
+    - test_helper: deleted line made redundent by rails 2.3
+  * Added rack to gem dependencies. vendor/gems
+
+
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Mon, 19 Jul 2010 22:37:36 -0500
+
+cnu-it-cfg-web (0.9.2) stable; urgency=low
+
+  * UPGRADED to Rails 2.3.8
+    * new javascripts
+    * updated tests to reflect switch to ActiveSupport
+  * added scripts for xen mapping crons
+  * set a From: header on emails from the package per Ken's request
+  * new feature to support add/edit/delete of postgres database configs
+    setup as a resource. working tests.
+  * database cluster models
+  * switch to xhtml tranistional markup
+  * fixed pagination issues when searching nodes by IP address
+  * added gen_graph. takes cluster id and generates graphviz file
+  * Added versions_changelog. It will provide a 'human readable' change log
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Thu, 15 Jul 2010 15:04:20 -0500
+
+cnu-it-cfg-web (0.9.1) stable; urgency=low
+
+  * now uses pacemaker instead of heartbeat
+  * added page to list users
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Thu, 08 Jul 2010 17:46:28 -0500
+
+cnu-it-cfg-web (0.9.0) stable; urgency=low
+
+  * refactor old irb only methods out of network_nodes.rb
+  * move functions from network_nodes to console_support
+  * db_init: now works for all databases and sets search_path correctly
+  * removed Apache config generation. Now throws warnings and skips services with localport 80
+  * added service checks per node
+  * fixed bugs to make software controller tests pass correctly
+  * add a test to get pdu controller at 100% coverage
+  * fixed bug/typo in update_dist method for software_controller
+  * added test_should_update and test_should_update_dist
+  * change display of nagios, node status, performance stats, etc float to the right for runtime versus config diffs.
+  * Add machinist to plugin list for checkout
+  * Add faker plugin
+  * PaperTrail fix for console and gen_layout 
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Wed, 07 Jul 2010 20:14:46 -0500
+
+cnu-it-cfg-web (0.8.9) lucid; urgency=low
+
+  * node search now works when datacenter is supplied (i.e. xen01.dc1) instead of returning all nodes
+  * fixed linking service dependencies with wrong id
+  * node search now works with host ip addresses. search partial by adding *
+  * node view now shows VLAN list if node is type physical
+  * added vlans method to Node. Returns array of vlans or Nil if node is not physical
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Tue, 29 Jun 2010 19:20:03 -0500
+
+cnu-it-cfg-web (0.8.8.1) lucid; urgency=low
+
+  * Fixed views for service dependencies
+    * Now easier to identify and select services
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Mon, 21 Jun 2010 20:03:14 -0500
+
+cnu-it-cfg-web (0.8.8) lucid; urgency=low
+
+  * Services can now have Service Dependencies
+  * Engineers can now delete empty clusters
+  * Bugfix in Cluster.active? that returned nil instead of boolean if fw_mark was nil
+  * Internal/External sevice pages now show only services that are in use
+
+ -- Josh Krueger <jkrueger@jkrueger-desktop>  Mon, 21 Jun 2010 16:54:43 -0500
+
+cnu-it-cfg-web (0.8.7.1) jaunty; urgency=low
+
+  * Emergency fix for validation when local_port is empty 
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Tue, 25 May 2010 12:57:37 -0500
+
+cnu-it-cfg-web (0.8.7) jaunty; urgency=low
+
+  * New instructions and Validations for Service edit/create 
+    * add validation checks to Service.
+    * Make sure port numbers are integers between 1 and 65535.
+    * Make sure service and local port are not equal
+  * Nagios object definition changes 
+    * Add notes and action urls to hosts and CERT-SERVICE and HA-SERVICES 
+    * Links to cfgdb and wiki from nagios
+    * Add parents to all virtual/domUs of their xen domO
+  * Add links to nagios from each node page 
+  * Fixed search for nodes, cleaned up machine markup
+  * Initial commit of snmpswitch library
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Wed, 12 May 2010 15:32:11 -0500
+
+cnu-it-cfg-web (0.8.6) jaunty; urgency=low
+
+  * nagios fixes
+    * fix cert check notification interval 360
+    * remove  cnu-generic-host hostgroup
+
+ -- Chad Slaughter <cslaughter@enovafinancial.com>  Fri, 30 Apr 2010 16:12:25 -0500
+
+cnu-it-cfg-web (0.8.5) jaunty; urgency=low
+
+  * change check_interval for smtp to 5, leave at 1 for everything else
+  * cleanup html
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 31 Mar 2010 17:21:27 -0500
+
+cnu-it-cfg-web (0.8.4) jaunty; urgency=low
+
+  * use ldirectord smtp check for smtp/mail services
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 31 Mar 2010 15:39:04 -0500
+
+cnu-it-cfg-web (0.8.3) jaunty; urgency=low
+
+  * fix lb status page generation
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 30 Mar 2010 01:27:09 -0500
+
+cnu-it-cfg-web (0.8.2) jaunty; urgency=low
+
+  *  increase timeouts and check intervals for pacemaker
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 30 Mar 2010 00:48:58 -0500
+
+cnu-it-cfg-web (0.8.1) karmic; urgency=low
+
+  * added script to compare and import inventory csv
+  * Xen mapping updates. Agent forwarding and sortable
+  * only sync nics when virtual hosts for pairup method
+  * clean up of misc runbook files
+  * allow support for postgres wildcard character '_'
+  * support to generate available hosts to scan for ssh keys
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Tue, 23 Mar 2010 18:07:51 -0500
+
+cnu-it-cfg-web (0.8.0.1) karmic; urgency=low
+
+  * fixed nil bug in xen/compare view
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 19 Mar 2010 18:22:29 -0500
+
+cnu-it-cfg-web (0.8.0) karmic; urgency=low
+
+  * Changed pull_xen_status.sh to call new script
+  * Added controller and views to add dist/kernel
+  * Removed Os/Kernel column from node listing
+  * Added Distribution model
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 19 Mar 2010 17:32:16 -0500
+
+cnu-it-cfg-web (0.7.9) jaunty; urgency=low
+
+  * fix default gateway on select cnuapp nodes in OBR
+  * fix default gateway on mail cluster nodes
+  * sidebar/welcome navs use same partial.
+  * force commit of debian/changelog on 'build:publish' from rakefile
+  * Disk methods to support constructing xen disk reference url from parts
+  * Change to status page to more module to help with OBR testing.
+    * make dc.js to be data center independent.
+    * create a new loadbalancer.js file to list the active load balancers.
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 17 Mar 2010 19:19:15 -0500
+
+cnu-it-cfg-web (0.7.8) karmic; urgency=low
+
+  * fix for papert_trail not logging 'whodunnit'
+    * requires paper_trail in config/initializers/papertrail.rb instead of config/environment.rb
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Tue, 16 Mar 2010 18:33:48 -0500
+
+cnu-it-cfg-web (0.7.7) jaunty; urgency=low
+
+  * generate iscsi ifaces/eth* files for san nic cards
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 12 Mar 2010 18:06:01 -0600
+
+cnu-it-cfg-web (0.7.6) karmic; urgency=low
+
+  * filters nodes by datacenter when adding to san
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 12 Mar 2010 17:09:06 -0600
+
+cnu-it-cfg-web (0.7.5) karmic; urgency=low
+
+  * added confirmation when removing nodes from a cluster
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 12 Mar 2010 15:57:34 -0600
+
+cnu-it-cfg-web (0.7.4.1) karmic; urgency=low
+
+  * fixed bug preventing addition of pdu/serial consoles to load balancers
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Fri, 12 Mar 2010 15:37:23 -0600
+
+cnu-it-cfg-web (0.7.4) karmic; urgency=low
+
+  * added SSL support
+    * added nginx configs
+    * changed mongrel to only listen on 127.0.0.1
+    * nginx listens on 8013 and 44313 for app
+  * new javscript file for listing active loadbalancers
+  * Changes to status_controller to allow genearting of temporary OBR status file
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 11 Mar 2010 16:55:03 -0600
+
+cnu-it-cfg-web (0.7.3) jaunty; urgency=low
+
+  * FIXME: hardcode custom net.services for uk01
+  * PDU/Serial console count verification
+    * blocks plugging of PDU if physical node has no defined model, power supplies, or all plugs are used up [CL]
+    * blocks plugging of serial consoles if ports are used up (1 for physical, 2 for san) [CL]
+    * added system warning for model definitions if lacking power supplies [CL]
+  * Changed wording for default model on /node/list
+  * add search method on Node by hostname
+
+
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 11 Mar 2010 14:27:48 -0600
+
+cnu-it-cfg-web (0.7.2) jaunty; urgency=low
+
+  * add net_filter section to net.services for load balancers only
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 10 Mar 2010 14:43:57 -0600
+
+cnu-it-cfg-web (0.7.1) jaunty; urgency=low
+
+  * interface file changes, hide warnings from pre-up ifup
+  * fix create_virtual_nics remove extra nics
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 09 Mar 2010 17:52:52 -0600
+
+cnu-it-cfg-web (0.7.0) jaunty; urgency=low
+
+  * fix net.services for load balancers in OBR
+  * fix net.services for vlan 9 hosts
+  
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 09 Mar 2010 15:14:19 -0600
+
+cnu-it-cfg-web (0.6.9) jaunty; urgency=low
+
+  * change status page deployment directory
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 09 Mar 2010 09:15:19 -0600
+
+cnu-it-cfg-web (0.6.8) jaunty; urgency=low
+
+  * fix pacemaker and heartbeat genereated files
+  * Remove duplicate IPs from ldirectord config files
+  *   fix Mike V's whinying [CL]
+  * Fix database views 
+  *  postgres cluster storage and network support
+  * merge all database functions into network_nodes_functions.
+  *  remove unused database functions
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 08 Mar 2010 17:12:26 -0600
+
+cnu-it-cfg-web (0.6.7) karmic; urgency=low
+
+  * added live xen mappings comparison
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Thu, 04 Mar 2010 17:07:31 -0600
+
+cnu-it-cfg-web (0.6.6) karmic; urgency=low
+
+  * allow deletion of nodes
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Mon, 01 Mar 2010 15:58:57 -0600
+
+cnu-it-cfg-web (0.6.5) karmic; urgency=low
+
+  * fix display of 'down' server with statistic when service is down
+  * reduce size of status page by 5%
+  * make node background color acurate to status
+
+ -- Josh Krueger <jkrueger@josh-laptop>  Wed, 24 Feb 2010 17:35:42 -0600
+
+cnu-it-cfg-web (0.6.4.2) jaunty; urgency=low
+
+  * emergency fix for cluster order causing too many diffs in heartbeat config 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 19 Feb 2010 22:22:46 -0600
+
+cnu-it-cfg-web (0.6.4.1) jaunty; urgency=low
+
+  * Forgot to commit controllers and views to create lb app
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 19 Feb 2010 22:12:17 -0600
+
+cnu-it-cfg-web (0.6.4) jaunty; urgency=low
+
+  * new load balancer status page application.
+     more statistics per cluster
+     stats for port forwarded clusters
+     add links to cfgdb from status page
+     pure javascript to pull data from lb to show a single view
+  * include css and javascript code in deployment for lb status page
+  * When adding a new tcp/ip port to an existing 'service name'
+    force availability and protocol to be the same as original.
+  * Add stacktrace on errors.during gen_layout
+  * Use %SERIAL% token instead of value.
+    token will be replaced at DNS load time
+  * exlude log files but not log directory
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 19 Feb 2010 22:05:25 -0600
+
+cnu-it-cfg-web (0.6.3.2) jaunty; urgency=low
+
+  * Mike V is a retard. The max is L not J
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 18 Feb 2010 15:04:25 -0600
+
+cnu-it-cfg-web (0.6.3.1) jaunty; urgency=low
+
+  * change network allowed ports
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 18 Feb 2010 14:58:14 -0600
+
+cnu-it-cfg-web (0.6.3) jaunty; urgency=low
+
+  * nginx config files for down files 
+  * new page which has warnings like gen_layout 
+  * clean up gen_layout output.
+    * set all warnings and 'creating' lines to be $VERBOSE output only 
+    *  add a new error message to catch when too few load balancers have no PDU 
+  * remove special handling of paper_trail plugin
+    * replace init.rb with require line in environment.rb
+  * add /usr/bin/gen_layout 
+  * fix site_keys issues
+  * Ldap Authentication
+     * Falls back to local user auth if LDAP throws exception or is unavailable
+     * Debian build creates link to ldap_production
+     * Moved requires and LDAP config processing into LdapUser instead of in environment
+  * Fixed bug where passwords were stored in the logs
+  * Added xml view for cluster/show/id. 
+  * first pass at clone_node method
+  * checkout plugins if not present 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 12 Feb 2010 09:39:18 -0600
+
+cnu-it-cfg-web (0.6.2) jaunty; urgency=low
+
+  * Provide XML view of XEN hosts
+  * verbose backtrace info for config_layout
+  * FIXME: hard code count of load balancers to 3 for latisys rollout
+    revert this as soon as tagging and support code for multi lb groups exist
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 03 Feb 2010 18:37:43 -0600
+
+cnu-it-cfg-web (0.6.1) jaunty; urgency=low
+
+  * remove timestamps from files. 
+  * add md5 checksum support
+  * Added left hand global navigation bar 
+  * Added CSS3 psudeo-selector for 'zebra striping' 
+  * Fixed erb logic error that lead to empty unordered list bullet
+
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 28 Jan 2010 09:51:14 -0600
+
+cnu-it-cfg-web (0.6.0) jaunty; urgency=low
+
+  * fix lbstatus page
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 08 Jan 2010 20:42:46 -0600
+
+cnu-it-cfg-web (0.5.9) jaunty; urgency=low
+
+  * do not generate a downpage config file for a service which does not have a unique local_port
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 17 Dec 2009 19:41:15 -0600
+
+cnu-it-cfg-web (0.5.8) jaunty; urgency=low
+
+  * feature: regroup hosts and support hostgroups line
+      split ha services into internal and external
+      group hosts by datacenter
+      use hostgroups line instead of trying to construct a single use line
+  * fix up network switch plug to allow switches to plug into each other.
+    add test case and validation
+  * cleanup test data with new restraints
+  * new status page to render lb status
+    support functions to make cluster/status page work better
+    cluster/status is readable by anyone
+  * clean up warnings
+  * fix creating virutal nic cards
+  * fix show_names controller method auth
+  * fix tech 500 error when searching for 'load1.dc2'
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 17 Dec 2009 17:37:55 -0600
+
+cnu-it-cfg-web (0.5.7) jaunty; urgency=low
+
+  * generate switch.cfg for switch label information
+  * Fix gen_layout to allow no arguments instead of require -test.
+  * new method to select unused IP address from all address on a network
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 11 Dec 2009 17:31:00 -0600
+
+cnu-it-cfg-web (0.5.6) jaunty; urgency=low
+
+  * emergency fix lbstatus undfined method '+' on nil
+  * dry up views with helpers 
+  * fix 'add service' button in cluster
+  * clean up some css/javascript errors
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 10 Dec 2009 12:49:50 -0600
+
+cnu-it-cfg-web (0.5.5) jaunty; urgency=low
+
+  * display node.to_label when using node name 
+  ** todo: need view helper
+  * switch to jquery for effects
+  * add search box to node listing
+  ** todo: add ip search
+  * show only datacenter specific pdu/scs/switch 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 03 Dec 2009 16:30:26 -0600
+
+cnu-it-cfg-web (0.5.4) jaunty; urgency=low
+
+  * fix interface file generate
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 16 Nov 2009 19:34:13 -0600
+
+cnu-it-cfg-web (0.5.3) jaunty; urgency=low
+
+  *  add serivce tag support to config db
+  * add link to create a new node on bootstrap page
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 13 Nov 2009 17:56:48 -0600
+
+cnu-it-cfg-web (0.5.2) jaunty; urgency=low
+
+  * fix bootstrap process to attach to a node
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 13 Nov 2009 16:13:17 -0600
+
+cnu-it-cfg-web (0.5.1) jaunty; urgency=low
+
+  * i hate ruby
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 13 Nov 2009 04:53:18 -0600
+
+cnu-it-cfg-web (0.5.0) jaunty; urgency=low
+
+  * fix cluster creation.
+    * new method to auto select a forward mark
+    * change add node to merge_node to have
+  * add PI to space config generator
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 13 Nov 2009 04:48:10 -0600
+
+cnu-it-cfg-web (0.4.9) jaunty; urgency=low
+
+  * update bootstrap to use 'ip -o link'
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 20:10:38 -0600
+
+cnu-it-cfg-web (0.4.8) jaunty; urgency=low
+
+  *  messed up controller
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 19:26:09 -0600
+
+cnu-it-cfg-web (0.4.7) jaunty; urgency=low
+
+  *  minor update for machine.description throwing nil error
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 18:17:52 -0600
+
+cnu-it-cfg-web (0.4.6) jaunty; urgency=low
+
+  *  fix node edit page
+  * change serial flow control to text field
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 17:44:11 -0600
+
+cnu-it-cfg-web (0.4.5) jaunty; urgency=low
+
+  * parse out nic info from bootstrap data
+  * changes to bootstrap, new colums
+    add constriant to pdus table
+  * add search for node urls
+  * bootstrap changes for two stage notice
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 15:59:48 -0600
+
+cnu-it-cfg-web (0.4.4) jaunty; urgency=low
+
+  * nagios server and HA service generation
+  * fix permissions on cluster editing
+  * fix downpage to support json mime type
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 11 Nov 2009 00:24:15 -0600
+
+cnu-it-cfg-web (0.4.3) jaunty; urgency=low
+
+  * add suport for bootstrapping new nodes
+    this is a direct port of the original dasboot source
+  * Simplify constraint checks by using the database! what a concept
+    sql to make node_type_id  is not null
+  * fix node create and display for non virtual/physical nodes
+  * clean up node entry page
+    mark first column of forms with bold drak red to stand out
+  * rename to welcome.html.erb
+  * minor css tweaks
+  * missing commit for support functions and db changes
+  * fix authorization for name based 'show' method to work in read-only mode
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Sat, 07 Nov 2009 19:17:24 -0600
+
+cnu-it-cfg-web (0.4.2) jaunty; urgency=low
+
+  * pagination of node table. 
+    It was iritating to scroll.
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 06 Nov 2009 22:25:36 -0600
+
+cnu-it-cfg-web (0.4.1) jaunty; urgency=low
+
+  * list only unasssigned virutal nodes in xen mapping
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 06 Nov 2009 15:54:50 -0600
+
+cnu-it-cfg-web (0.4.0) jaunty; urgency=low
+
+  * pdu label config files
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 05 Nov 2009 19:01:36 -0600
+
+cnu-it-cfg-web (0.3.9) jaunty; urgency=low
+
+  * Serial console server support
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 05 Nov 2009 16:19:07 -0600
+
+cnu-it-cfg-web (0.3.8) jaunty; urgency=low
+
+  * Finally add pacemaker support
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 21 Oct 2009 13:01:32 -0500
+
+cnu-it-cfg-web (0.3.7) jaunty; urgency=low
+
+  * Add cacheing for Querys to gen_layout to speed up.
+    also use new plugin static_record_cache on DataCenter, Protocol, NodeType
+    which are small tables with zero online changes.
+    This should save about 20 seconds off gen_layout.
+  * prepare for autocommit of configs to git
+    added timings to generate layout for any performance problems
+
+  * Apply correct netwmask instad of default 255.255.255.0
+  * Turn errors into warnings. Might need to make this smarter about
+    what is an error and what is not. Maybe based on location.
+  *  When there is an error on the root back redirect_to :Back doesn't
+     work. This should handle those cases
+   * Add a drop down to show major groups of nodes to welcome screen and node list page
+     Drop down selects nodes by location and by node type
+  * Code to implement list of nodes by Datacenter and Nodetype.
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 19 Oct 2009 19:21:00 -0500
+
+cnu-it-cfg-web (0.3.6) jaunty; urgency=low
+
+  * emergency fix for sessions missing due to stupidity
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 16 Oct 2009 12:21:37 -0500
+
+cnu-it-cfg-web (0.3.5) jaunty; urgency=low
+
+  * Genearte interfaces files for load balancers
+  * Generate Canada space files
+  * Add basic library paginator
+  * Use activerecord sessions instead of cookies
+  * put postgres errors into web pages for users
+  * node creation clean up.
+  * allow a single partial_update from node show. first pass of integration show/edit pages for node
+    * include general application mehtods editable_content_inline to help with Ajax
+  * Services 
+    * new validations to Service
+    * service controller missing access filters.
+    * fix edit/new pages
+  * new validation for nodes and clusters
+    ** new method to check mgmt ip uniqueness, TODO: move it elsewhere
+    ** use validations instead of exceptions and checks in create
+  * add to_label to OsVersion and CnuMachineModel
+  * fix machine create page
+  * Fix node creation to add datacenter_id and option osversion/machien models
+  * Fix plugins list : declarative_authorization paper_trail recordselect restful_authentication
+  * fix SAN dns file generation
+   * Break out networks IPs into different file.
+   * Fix dns serial number to do 1 -> 01 padding
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Wed, 14 Oct 2009 11:49:43 -0500
+
+cnu-it-cfg-web (0.3.4) jaunty; urgency=low
+
+  * major new features for nodes: PDUs, serial console, datacenter
+    * major support for serial consoles/pdu, san DNS and pacemaker configs
+    * pace maker files
+    * serial console support
+    * pdu support
+    * san dns generation
+  * Support for pacemaker load balancer xml files
+  * fixes a bug found in Gurneee by Jeff
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 06 Oct 2009 12:11:39 -0500
+
+cnu-it-cfg-web (0.3.3) jaunty; urgency=low
+
+  * fix protcol selection in service create
+  * fix init script
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 14 Sep 2009 16:22:57 -0500
+
+cnu-it-cfg-web (0.3.2) jaunty; urgency=low
+
+  * init script that works
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 14 Sep 2009 13:48:40 -0500
+
+cnu-it-cfg-web (0.3.1) jaunty; urgency=low
+
+  * fix services create to reuse existing IPs
+  * auth for editing services 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Mon, 14 Sep 2009 12:02:09 -0500
+
+cnu-it-cfg-web (0.3.0) jaunty; urgency=low
+
+  * fix node updat permissions. The problem was restricting type change from
+    normal edits
+  * fix node/edit-> show link
+  * fix typos
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 11 Sep 2009 17:34:33 -0500
+
+cnu-it-cfg-web (0.2.9) jaunty; urgency=low
+
+  * fix engineer permissions
+  * fix cluster create bug
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 08 Sep 2009 18:03:54 -0500
+
+cnu-it-cfg-web (0.2.8) jaunty; urgency=low
+
+  * call create_virtual_nics when adding to a cluster
+  * call when generating domU config and no nics exist
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 03 Sep 2009 16:54:18 -0500
+
+cnu-it-cfg-web (0.2.7) jaunty; urgency=low
+
+  * fix authorization rules for opertor and sysadmin to create/edit nodes
+  * add machine selcetion to create node
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Thu, 03 Sep 2009 15:30:46 -0500
+
+cnu-it-cfg-web (0.2.6) jaunty; urgency=low
+
+  * submit_layout
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 01 Sep 2009 14:22:00 -0500
+
+cnu-it-cfg-web (0.2.5) jaunty; urgency=low
+
+  * fix creation of clusters in vlan 101 
+  * fix order on certain drop down boxes with hostnames
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 01 Sep 2009 11:50:40 -0500
+
+cnu-it-cfg-web (0.2.4) jaunty; urgency=low
+
+  * fix rsync exclude for the .git subdirectory
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 28 Aug 2009 20:40:16 -0500
+
+cnu-it-cfg-web (0.2.3) jaunty; urgency=low
+
+  * allow editing of machine type for nodes
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 28 Aug 2009 16:09:31 -0500
+
+cnu-it-cfg-web (0.2.2) jaunty; urgency=low
+
+  * fix debian install scripts
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 25 Aug 2009 11:05:45 -0500
+
+cnu-it-cfg-web (0.2.1) jaunty; urgency=low
+
+  * fix exit status on post install script
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 25 Aug 2009 09:01:24 -0500
+
+cnu-it-cfg-web (0.2.0) jaunty; urgency=low
+
+  * Fix next_node_ip exception
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Tue, 25 Aug 2009 08:58:50 -0500
+
+cnu-it-cfg-web (0.0.1)  UNRELEASED;
+
+  * Initial release. 
+
+ -- Chad Slaughter <chad.slaughter+enki@gmail.com>  Fri, 21 Aug 2009 15:42:44 -0500

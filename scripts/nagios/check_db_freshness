@@ -1,0 +1,57 @@
+#!/bin/bash
+
+PSQL_BIN="/usr/bin/psql"
+PG_DATABASE="prod"
+PG_PORT="5432"
+
+##########################################################################################
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+usage="Usage: ./$0 -d [database] -h <hostname> -p [port] -a <age_in_seconds>" 
+
+while getopts "a:d:h:p:" options; do
+  case $options in
+    a ) AGE=$OPTARG;;
+    d ) PG_DATABASE=$OPTARG;;
+    h ) SLAVE_DB=$OPTARG;;
+    p ) PG_PORT=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ "$#" -lt "2" -o "$SLAVE_DB" == "" -o "$AGE" == "" ]; then
+    echo "Required Check Parameters Missing!" 
+    exit $STATE_UNKNOWN
+fi
+
+  # Connect to the DB to get status
+  DB_INFO=`$PSQL_BIN -h $SLAVE_DB -p $PG_PORT -d $PG_DATABASE -v ON_ERROR_STOP=1 -F"," -P format=unaligned -t -c "select * from tools.freshness;" 2>&1`
+  PG_STATUS=$?
+
+  if [ $PG_STATUS -eq 0 ]; then
+
+    # Update Status
+    status_desc="Can't parse database freshness!"
+
+    # Parse the database status
+    db_age=`echo $DB_INFO |cut -s -d, -f3 |cut -d. -f1`
+
+    # Figure out our ages
+    if [ "$db_age" -lt "$AGE" ]; then
+      echo "DB Freshness is within limits."
+      exit $STATE_OK
+    else
+      echo "DB Freshness is outside limits."
+      exit $STATE_CRITICAL
+
+    fi
+  fi
+
+echo "Database connection to $SLAVE_DB failed!"
+exit $STATE_CRITICAL

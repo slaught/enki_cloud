@@ -1,0 +1,14 @@
+<h1>Async Pushes</h1>
+<br/>
+<h3>SCS Push</h3>
+<div id="scs_push">
+  <%= link_to_remote "Push It.", :update => "scs_push", :url => { :action => "scs" } %>
+</div>
+<br/>
+<h3>PDU Push</h3>
+<div id="pdu_push">
+  <%= link_to_remote "Push It.", :update => "pdu_push", :url => { :action => "pdu" } %>
+</div>
+<br/>
+<h3>Host Push</h3>
+<%= link_to "Push a host", { :action => "host" } %>

@@ -1,0 +1,106 @@
+<table summary="<%= cluster.cluster_name %>">
+	<colgroup span="10"></colgroup> 
+	<tr class="service_totals even">
+		<td class="service_title" colspan= "2">
+			<%= cluster.description %>	
+		</td>
+		<td colspan="3">
+			<div class="service_urls">
+				<% for(var j = 0;j < cluster.services.length;j++) {
+		   			var s = cluster.services[j]; %>
+		       		<a href="<%= s.url %>"><%= s.ha_hostname %></a>
+				<% } %>    
+			</div>	
+		</td>
+		<td colspan="1" class="activeconns"><%= formatValue( getServiceTotals( statuses, 2 ) )%></td>
+		<td colspan="1" class="expireconns"><%= formatValue( getServiceTotals( statuses, 3 ) )%></td>
+		<td colspan="1" class="totalconns"><%= formatValue( getServiceTotals( statuses, 2 ) + getServiceTotals( statuses, 3 ) )%></td>
+	    <td colspan="1" class="totalcps"><%= formatValue( getServiceTotals( statuses, 9 ) ) %></td>
+	    <td colspan="1" class="totalpps"><%= formatValue( getServiceTotals( statuses, 10 ) ) %></td>
+	    <td colspan="1" class="totalbps"><%= formatValue( getServiceTotals( statuses, 7 ), true ) %></td>
+	    <td colspan="1" class="totalconn"><%= formatValue( getServiceTotals( statuses, 4 ), true ) %></td>	
+	</tr>
+	
+	<% for(var datacenter in statuses) { %>
+	
+		<%  var display = "table-row", 
+				uiState = "expanded";
+				uiIcon = "ui-icon-triangle-1-s";
+			if( datacenterUIState[datacenter] === "collapsed" ) {
+				display = "none";
+				uiState = "collapsed";
+				uiIcon = "ui-icon-triangle-1-e";
+			} else {
+				display = "table-row";
+				uiState = "expanded";
+				uiIcon = "ui-icon-triangle-1-s";
+			 } %>			 	
+	  	<tr class="config odd <%= datacenter %> <%= uiState %>">
+	  		<td class="datacenter" colspan="2">
+	  			<span class="ui-icon <%= uiIcon %>">&nbsp;&nbsp;&nbsp;</span>
+				<%= datacenter.toUpperCase() %> Totals
+			</td>
+		    <td colspan="1" class="sched"><%= schedLabel( statuses[datacenter].config.sched ) %></td>
+		    <td colspan="1" class="proto">Proto <%= statuses[datacenter].config.proto %></td>
+		    <td colspan="1" class="persist"><% if(statuses[datacenter].config.persist != "off") { %>Persistance<% } else { %>No Persistance<% } %></td>
+			<td colspan="1" class="activeconns"><%= formatValue( getClusterTotals( statuses[datacenter], 2 ) ) %></td>
+			<td colspan="1" class="expireconns"><%= formatValue( getClusterTotals( statuses[datacenter], 3 ) ) %></td>
+			<td colspan="1" class="totalconns"><%= formatValue( getClusterTotals( statuses[datacenter], 2 ) + getClusterTotals( statuses[datacenter], 3 ) ) %></td>
+		    <td colspan="1" class="totalcps"><%= formatValue( getClusterTotals( statuses[datacenter], 9 ) ) %></td>
+		    <td colspan="1" class="totalpps"><%= formatValue( getClusterTotals( statuses[datacenter], 10 ) ) %></td>
+		    <td colspan="1" class="totalbps"><%= formatValue( getClusterTotals( statuses[datacenter], 7 ), true ) %></td>
+		    <td colspan="1" class="totalconn"><%= formatValue( getClusterTotals( statuses[datacenter], 4 ), true ) %></td>
+		</tr>
+				
+		<tr class="thr even <%= datacenter %>_row" style="display:<%= display %>">
+		     <td class="s" colspan="2">Status</td>
+		     <td class="n">Node</td> 
+		     <td class="w" colspan="2">Node Weight</td>
+		     <td class="w">Active Conn</td>
+		     <td class="w">Expire Conn</td>
+		     <td class="w">Total Conn</td>
+		     <td class="w">Conn sec</td>
+		     <td class="w">Pkts sec</td>
+		     <td class="w">Total Traffic</td>
+		     <td class="w">Total Reqs</td>
+		</tr>
+	
+		<% for(var i=0;i<cluster.nodes.length;i++) {
+			   var n = cluster.nodes[i];
+		   var rowColorClassname = i%2 ? "even" : "odd"; 
+		   if( n.datacenter_name == datacenter ) { %>
+		    
+			    <tr id="<%= n.datacenter_name %>-<%= n.ip_address.replace(/[:\.]/g,'-') %>" class="<%= n.datacenter_name %>_row nodata <%= rowColorClassname %> node" style="display:<%= display %>">
+					<% var s = statuses[n.datacenter_name] && statuses[n.datacenter_name][n.ip_address];
+			           var status = s ? nodeStatus( s[1], s[2], s[3] ) : "no data";  %>		    	
+			        <td class="status s" colspan="2">
+			        	<% if (n.status_url) {  %>	
+			        		<a href="<%= n.status_url %>"><%= status %></a>
+						<% } else { %>
+							<%= status %>
+						<% } %>
+					</td>
+			        <td class="n">
+			        	<% if (n.mssing_from_clusters_json) {  %>
+							<%= n.ip_address %>
+						<% } else { %>			        	
+			        		<a href="<%= n.link %>"><%= n.hostname %></a>
+							<img src="../css/images/gear.png" <%= plugin('command_node_menu', { node: n } ) %> class="menu" />							
+						<% } %>
+					</td>
+			        <td class="cnt w" colspan="2"><%= s ? formatValue( s[1] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[2] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[3] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[2] + s[3] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[9] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[10] ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[7], true ) : "" %></td>
+			        <td class="cnt w"><%= s ? formatValue( s[4], true ) : "" %></td>
+			    </tr>
+					
+			<% } %>				
+		
+		<% } %>
+	
+	<% } %>	
+</table>	  

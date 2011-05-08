@@ -1,0 +1,30 @@
+<% set_html_title "Create New Cluster" %>
+<h1>New Cluster</h1>
+<p>
+
+<% form_for(:cluster, @cluster, :url => {:action => 'create'}) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :cluster_name %><br />
+    <%= f.text_field :cluster_name %>
+  </p>
+  <p>
+    <%= f.label :description  %><br />
+    <%= f.text_field :description %>
+  </p>
+  <p> <%= f.label :vlan      %><br />
+    <%= f.text_field :vlan    %> </p>
+
+  <p> <%= f.label "IP Network" %><br />
+    <%= f.text_field :ip_range   %> </p>
+
+  <p> Is this a load balanced cluster or port forward?
+    <br />
+    <%= f.label :load_balanced %><br />
+    <%= f.check_box :load_balanced %>
+  </p>
+
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

@@ -1,0 +1,148 @@
+#!/bin/bash
+#
+# Michael Vallaly (Jan '08) Ver 1.0
+
+# This plugin checks that Xen DomU's are running.
+#
+# Usage: ./check_xen_domains -a [all]
+#
+# -------------------------------------------------------
+# nagios      ALL=NOPASSWD: /usr/sbin/xm
+#
+#
+# Examples:
+#
+# ./check_xen_domains
+# Xen OK: chat01, vault01 DomU(s) running properly
+#
+# Another Examples:
+#
+# Xen WARNING: Xen domain chat01 running but NOT set to automaticly start.
+#
+# XEN CRITICAL: Xen domain chat01 not running!
+#
+#
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+XM_BINARY="/usr/sbin/xm"
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+if [ ! -e $XM_BINARY ]; then
+        echo "Xen CLI (xm) not found"
+        exit $STATE_UNKNOWN
+fi
+
+usage="Usage: ./check_xen_domains -d <xen domain name> or -a (all autostart domains)"
+
+while getopts "ad:" options; do
+  case $options in
+    a ) check_type="all";;
+    d ) user_domains+=" $OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 1 ]; then
+    echo $usage 
+    exit 1
+fi
+
+# Get a list of the autostart domains
+for autostarter in `ls /etc/xen/auto/`
+do
+  if [ -f /etc/xen/auto/$autostarter ]; then
+    autostart_domains+=`grep "name " /etc/xen/auto/$autostarter |cut -d= -f2 |tr -d \'`
+  fi
+done
+
+
+  cli_output=`$XM_BINARY list`
+  cli_status=$?
+
+  # Lets only continue if xm gives us some valid output
+  if [ $cli_status -eq 0 ]; then
+
+    # Check which input to check
+    if [ "$check_type" == "all" ]; then
+      check_domains=$autostart_domains
+    else
+      check_domains=$user_domains
+    fi
+
+    # Grab all the running Xen DomUs 
+    xen_domains=`echo "$cli_output" |egrep -e "r-----|-b----" |grep -v "Domain-0" |awk '{print $1}'`
+
+    # Check if DomU is running. 
+    for dom1 in $check_domains; do
+      for dom2 in $xen_domains; do
+        match=0
+        if [ "$dom1" == "$dom2" ]; then
+          match=1
+          break;
+        fi
+      done
+    
+      # Check if we matched
+      if [ $match -ne 1 ]; then
+        nagios_status+=" $dom1 is not running!"
+      fi
+
+    done
+
+      # Check if results are acceptable 
+      if [ "$nagios_status" == "" ]; then
+
+        # Check if running DomU is automaticly started.
+        for dom1 in $check_domains; do
+	  for dom2 in $autostart_domains; do
+            match=0
+            if [ "$dom1" == "$dom2" ]; then
+              match=1
+              break;
+            fi
+          done
+
+          # Check if we matched
+          if [ $match -ne 1 ]; then
+            nagios_status+=" $dom1 is not set to autostart!"
+          fi
+
+        done
+
+	# Check if no autostart configs exist
+	for domlist in $autostart_domains
+	do
+	  if [ -z $domlist ]; then
+	    nagios_status="No domains are set to autostart!"
+	  fi
+	done
+
+        # Check if results are acceptable
+        if [ "$nagios_status" == "" ]; then
+          echo "All DomU's are running properly. (`echo $check_domains |sed 's/ *//'`)"
+          exit $STATE_OK
+        else
+          echo "All DomU's are running properly. (`echo ${nagios_status} |sed 's/ *//'`)"
+          exit $STATE_WARNING
+        fi
+
+      else
+        echo "`echo ${nagios_status} |sed 's/ *//'`"
+        exit $STATE_CRITICAL
+      fi
+
+  else
+    echo "Xen CLI Utility did not execute properly : "${cli_output}
+    exit $STATE_UNKNOWN
+
+  fi
+
+

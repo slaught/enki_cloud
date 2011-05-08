@@ -1,0 +1,62 @@
+#!/bin/bash
+
+DEEP_BIN="/usr/bin/md5deep"
+FIND_BIN="find"
+CURL_BIN="curl"
+
+CHKSUM_URL="http://somewhere.example.com/cfg-chksum"
+
+CONFIG_DIR="/etc/cnu/configs"
+BASE_CONFIG_DIR="${CONFIG_DIR}/base_config"
+CHKSUM_DIR="${BASE_CONFIG_DIR}/chksums"
+
+#######################################################################
+
+DEEP_OPTS="-lr"   # -w?
+CURL_OPTS="-fR "
+
+# Cheak for root user
+
+mkdir -p ${CHKSUM_DIR}
+
+#GET THE checksum of checksums
+#$CURL_BIN $CURL_OPTS ${CHKSUM_URL}/all -o ${CHKSUM_DIR}/all
+ # CHK EXIT STATUS
+
+# Check the checksum file
+for chksum in `${DEEP_BIN} ${DEEP_OPTS} ${CHKSUM_DIR}/* -x -m ${CHKSUM_DIR}/all`; do
+  # GET/CURL the checksums
+  echo "$CURL_BIN $CURL_OPTS ${CHKSUM_URL}/${chksum} -o ${CHKSUM_DIR}/${chksum}"
+done
+
+for configdir in $CONFIG_DIR $BASE_CONFIG_DIR; do 
+
+  # make sure basedir exists
+  if [ ! -d $configdir ]; then
+    if [ "$configdir" == "$BASE_CONFIG_DIR" ]; then
+      echo "$configdir does not exist! Cannot validate deployed configs.."
+    else
+      echo "$configdir does not exist! Cannot validate running configs.."
+    fi
+    continue
+  fi
+
+  cd ${configdir}
+
+  for dir in `$FIND_BIN ${configdir} -mindepth 1 -maxdepth 1 -type d -a ! -path "${BASE_CONFIG_DIR}/chksums" -exec basename {} \;`; do
+
+    if [ ! -e ${CHKSUM_DIR}/${dir} ]; then
+      echo "Cannot find checksum file for ${dir} configs... skipping!"
+      continue
+    fi
+
+  # Do the work
+
+  output+="`${DEEP_BIN} ${DEEP_OPTS} ${dir} -x -m ${CHKSUM_DIR}/${dir}` "
+
+  done
+
+  # Print nice output here
+  echo $output
+
+done

@@ -1,0 +1,65 @@
+<% set_html_title "Bootstraps" %>
+<h1>Listing bootstraps</h1>
+
+<div>
+<ul><li><%= link_to "Create new Node", :controller => "node", :action => "new" %></li></ul>
+</div>
+
+<table>
+  <colgroup>
+  <col />
+  <col />
+  <col />
+  <col />
+  <col />
+  <col />
+  <col class="commands_span_column" span="3" />
+  </colgroup>
+  <tr>
+   <td>ready?</td>
+   <td>uuid_tag</td>
+   <td>service_tag</td>
+   <td>product name</td>
+   <td> node </td>
+   <td> Machine </td>
+   <td> </td>
+   <td> </td>
+   <td> </td>
+  </tr>
+<% for bootstrap in @bootstraps %>
+  <tr>
+   <td>
+  <% if bootstrap.ready? %>
+    Ready 
+  <% elsif bootstrap.stage_one? %>
+    <span >Stage One, </span>
+    <span style="font-weight: bold; color: red;">Stage Two Waiting</span>
+  <% else %>
+    <span style="font-weight: bold; color: red;">Not Ready</span>
+  <% end %>
+    </td>
+   <td><%= bootstrap.uuid_tag %></td>
+   <td><%= bootstrap.service_tag %></td>
+   <td><%= bootstrap.product_name%></td>
+   <td><% if bootstrap.node.nil?  then %>
+      no node
+    <% else %>
+      <%= link_to bootstrap.node.fn_prefix, :action => "show",:controller=>"node",:id=> bootstrap.node %>
+    <% end %>
+    </td><td>
+<% if bootstrap.model.nil? then %> 
+  no machine model found for <%= bootstrap.product_name %> 
+<% else %>
+  <%= bootstrap.model.to_label %>
+<% end %>
+    </td>
+    <td><%= link_to 'Show', bootstrap %></td>
+    <td><%= link_to 'Edit', edit_bootstrap_path(bootstrap) %></td>
+    <td><%= link_to 'Destroy', bootstrap, :confirm => 'Are you sure?', :method => :delete %></td>
+  </tr>
+<% end %>
+</table>
+
+<br />
+
+<%= link_to 'New bootstrap', new_bootstrap_path %>

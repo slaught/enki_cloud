@@ -1,0 +1,142 @@
+#! /bin/bash
+#
+# Michael Vallaly Ver 1.2 (Oct '10)
+#
+# Description:
+#
+# This script updates the outlet name of APC PDUs using SNMPv3
+#
+# Usage: ./apc_set_name -h <host> -t "<port>:<name>" -a [all hosts]
+
+# Binary Dependencies
+SNMPSET_BIN="/usr/bin/snmpset"
+
+IT_CFG_DIR="/tmp/cfg-stage"
+
+# APC User Authentication File
+APC_AUTH="/etc/cnu/keys/deployment-snmpv3.auth"
+
+#########################################################################################
+
+# APC OIDs
+OUTLET_NAME_OID=".1.3.6.1.4.1.318.1.1.12.3.4.1.1.2"
+
+# Print our usage line
+usage="Usage: ./apc_set_name -h <host> -t '<port>:<name>'\n\n
+\t-a  Load all pdu.cfg files from ($IT_CFG_DIR)\n
+\t-f  Load config from PDU file\n
+\t-h  Hostname of PDU\n
+\t-t  Tuple containing 'Outlet # : Description'\n"
+
+# Check our parameters and set the service_type 
+while getopts "af:h:t:" options; do
+  case $options in
+    a ) ALL_CFGS=1;;
+    f ) PDU_FILES+="$OPTARG\n";;
+    h ) PDU_HOST="$OPTARG";;
+    t ) CMD_TUPLES+="$OPTARG\n";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check for script dependencies
+for bindep in $SNMPSET_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Make sure we know what to do
+if [ $# -lt 1 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Load the USER authentication (if we are authorized)
+if [ ! -e "$APC_AUTH" ] || [ ! -r "$APC_AUTH" ]; then
+  echo "Cannot load authentication file (${APC_AUTH}).. Exiting!" >&2
+  exit 1
+else
+  . "$APC_AUTH"
+fi
+
+# Set SNMP options
+SNMP_OPT="-v3 -l authPriv -a MD5 -u ${APC_USER} -A ${APC_PASS} -x DES -X ${APC_PASS}"
+
+# Handle loading tuples out of pre-existing config files
+if [ "$ALL_CFGS" == "1" ]; then
+  if [ ! -d $IT_CFG_DIR ]; then
+    echo "Error Configuration Directory ($IT_CFG_DIR) does not exist! Exiting.."
+    exit 1
+  fi
+  PDU_FILES+=`find $IT_CFG_DIR -type f -name pdu.cfg`
+fi
+
+# Delimit normally
+IFS=$' \t\n'
+
+for file in `echo -e $PDU_FILES $PDU_HOST`; do
+
+  TUPLES=""
+
+  # If this is a config file parse it, else its a PDU_HOST
+  if [ -r ${file} ]; then
+    # Source the cfg file
+    . ${file}
+    
+    # Infer the hostname from the config files parent directory 
+    PDU_HOST="`basename $(dirname ${file})`.example.com"
+
+    # Load the hosts tuples 
+    for line in ${PDU_LABEL_CFG[*]}; do
+      TUPLES+="`echo $line |cut -s -d: -f1,2`\n"
+    done
+  else 
+    if [ "${PDU_HOST}x" == "x" ]; then
+      echo "Configuration file (${file}) not found! Skipping.."
+      continue
+    else
+      TUPLES=$CMD_TUPLES
+    fi
+  fi  
+
+  # Check PDU reachability via ICMP
+  if ! ping ${PDU_HOST} -qn -c 1 -w 5 &> /dev/null; then
+    echo "No network connectivity to PDU (${PDU_HOST}) detected! Skipping.."
+    continue
+  fi
+
+  # Delimit on newline only
+  IFS=$'\n'
+
+  echo -n "Updating outlet names on ${PDU_HOST}... "
+
+  for tuple in `echo -e $TUPLES`; do 
+
+    outlet_num=`echo $tuple |cut -s -d: -f1 |tr -d '[[:alpha:]][[:punct:]]'`
+    outlet_name=`echo $tuple |cut -s -d: -f2`
+
+    if [ "${outlet_num}x" == "x" ] || [ "${outlet_name}x" == "x" ]; then
+      echo "Invalid Tuple (${tuple}).. Skipping!"
+      continue
+    fi
+
+    # Apply the outlet configuration change via SNMP 
+    if ! eval "${SNMPSET_BIN} ${SNMP_OPT} ${PDU_HOST} ${OUTLET_NAME_OID}.${outlet_num} s \"${outlet_name}\"" &> /dev/null; then
+      echo "Outlet SNMP name change failed! Skipping.."
+      continue 2
+    fi
+    #echo "DEBUG: ${SNMPSET_BIN} ${SNMP_OPT} ${PDU_HOST} ${OUTLET_NAME_OID}.${outlet_num} s ${outlet_name}"
+
+  done
+
+  echo "Done."
+
+done 
+
+exit 0
+

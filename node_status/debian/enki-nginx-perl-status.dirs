@@ -1,0 +1,4 @@
+usr/local/nginx
+etc/nginx/sites-enabled
+etc/enki/configs/node
+enki/var/tmp/services

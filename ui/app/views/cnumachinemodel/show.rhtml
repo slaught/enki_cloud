@@ -1,0 +1,16 @@
+<% set_html_title @cnumachinemodel.model_no %>
+<h1><%= @cnumachinemodel.model_no %></h1>
+<h2><%= @cnumachinemodel.manufacturer %></h2>
+<dl>
+<dt>Memory (MB)</dt> <dd><%= @cnumachinemodel.megabytes_memory %></dd>
+<dt>CPU Cores</dt> <dd><%= @cnumachinemodel.cpu_cores %></dd>
+<dt>Power Supplies</dt> <dd><%= @cnumachinemodel.power_supplies %></dd>
+<dt>CPU Speed (MHz)</dt> <dd><%= @cnumachinemodel.cpu_speed_megahertz %></dd>
+<dt>Network Interfaces</dt> <dd><%= @cnumachinemodel.network_interfaces %></dd>
+<dt>Max Amps Used</dt> <dd><%= @cnumachinemodel.max_amps_used %></dd>
+<dt>Max BTU/Hour</dt> <dd><%= @cnumachinemodel.max_btu_per_hour %></dd>
+<dt>Serial Console Type</dt> <dd><%= @cnumachinemodel.serial_console_type %></dd>
+<dt>Rack Size</dt> <dd><%= @cnumachinemodel.rack_size %></dd>
+
+
+<hr />

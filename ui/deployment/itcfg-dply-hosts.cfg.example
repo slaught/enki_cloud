@@ -1,0 +1,17 @@
+#!/bin/bash 
+
+# This file should contain all deployment servers/hosts.
+# Additions or removals should be made here so all scripts reflect up to date deployment information.
+
+# Syntax: ("HOSTNAME:REMOTE_PATH")
+
+DEPLOYMENT_NODES=(
+                "test01.dc1:/etc/cnu/configs/base_config" # Mastertest machine
+
+                "swi001.dc1:none"								# LAN Switch 
+            		"scs.dc1:/root/cnu/configs"							# SCS
+                "pdu.dc1:none"								# PDU
+
+		)
+
+

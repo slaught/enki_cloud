@@ -1,0 +1,8 @@
+<h3>Load Balancer Status</h3>
+<%for(var i =0; i < Command.Models.Status.hosts.length; i++){%>
+	<div class="load_balancer <%= statuses[i] %>">
+		<a href="http://<%= Command.Models.Status.hosts[i] %>/hb_status.html">
+			<%= Command.Models.Status.hosts[i] %>
+		</a>
+	</div>
+<%}%>

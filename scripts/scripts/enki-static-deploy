@@ -1,0 +1,191 @@
+#!/bin/bash
+
+# Michael Vallaly (Sept 2010) Rev 1.3
+
+# This script uploads/deploys app content to the static (CDN) cluster 
+
+CDN_USER="root"
+
+CDN_MASTER="static01.cdn.example.com"
+CDN_BASEPATH="/data/static_content"
+KEY_PREFIX="/etc/enki/keys/static-cdn."
+
+FIND_BIN="/usr/bin/find"
+SSH_BIN="/usr/bin/ssh"
+RSYNC_BIN="/usr/bin/rsync"
+
+STATIC_BASE="Base"
+
+###############################################################################
+
+REMOVE_TRANSFERED_FILES=0
+DRY_RUN=0
+
+
+# Check for required binaries
+for req_bin in $FIND_BIN $SSH_BIN $RSYNC_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+usage="$0 -p <public_path> -f <FQDN> -b <brand> -c <country>\n 
+\t-k   CDN account private key file
+\t-n   dry-run (simulate transfer)
+\t-r   remove files after transfer
+\t-v   increase logging verbosity\n"
+
+# Parse our command line options
+while getopts "b:c:f:k:l:np:rv" options; do
+  case $options in
+    b ) STATIC_BRAND="$OPTARG";;
+    c ) STATIC_COUNTRY="$OPTARG";;
+    f ) STATIC_FQDN="$OPTARG";;
+    k ) CDN_KEY="$OPTARG";;
+    l ) CDN_USER="$OPTARG";;
+    n ) DRY_RUN="1";;
+    p ) STATIC_PATH="$OPTARG";;
+    r ) REMOVE_TRANSFERED_FILES="1";;
+    v ) VERBOSE+="v";;
+    \? ) echo -e "$usage"
+         exit 1;;
+     * ) echo -e "$usage"
+          exit 1;;
+  esac
+done
+
+
+# Ensure we have been specified a FQDN
+if [ "${STATIC_FQDN}x" == "x" ] || [ "${STATIC_BRAND}x" == "x" ] || [ "${STATIC_COUNTRY}x" == "x" ] || [ "${STATIC_PATH}x" == "x" ]; then
+  echo -e "$usage"
+  exit 1
+fi
+
+# Check the static filepath exists
+if [ ! -d "${STATIC_PATH}/Base" ]; then
+  echo "Error: Static content path (${STATIC_PATH}) does not exist! Aborting.."
+  exit 1
+fi
+
+# Check the Country filepath exists
+if [ ! -d "${STATIC_PATH}/${STATIC_COUNTRY}" ]; then
+  echo "Error: Country Code (${STATIC_COUNTRY}) does not exist! Aborting.."
+  exit 1
+fi
+
+# Check the Brand filepath exists
+if [ ! -d "${STATIC_PATH}/${STATIC_BRAND}" ]; then
+  echo "Error: Brand (${STATIC_BRAND}) does not exist! Aborting.."
+  exit 1
+fi
+
+# Infer the correct key if none is specified
+if [ -z $CDN_KEY ]; then
+  CDN_KEY="${KEY_PREFIX}${STATIC_FQDN}.key"
+fi
+
+# Generate the remote path
+REMOTE_PATH="${STATIC_FQDN}/docroot/"
+
+# Check that we can load our key
+if [ ! -r $CDN_KEY ]; then
+  echo "Can not open the CDN key file (${CDN_KEY})! Exiting.." >&2
+  exit 1
+fi
+
+# Set rsync base options
+RSYNC_OPTS="-rl"
+
+# Handle the dry-run
+if [ "$DRY_RUN" == "1" ]; then 
+  RSYNC_OPTS+=" -P --dry-run" 
+  echo "## Begin Transfer DRY RUN ##"
+fi
+
+# Handle logging verbosity
+if [ "${VERBOSE}x" != "x" ]; then
+  RSYNC_OPTS+=" -${VERBOSE}"
+else
+  RSYNC_OPTS+=" -q"
+  QUIET="2> /dev/null"
+fi
+
+# Generate our file layout
+TMPDIR="/tmp/CDN-${STATIC_FQDN}-tmpdir"
+rm -rf -- $TMPDIR
+mkdir -p -- $TMPDIR
+
+# Generate the static content layout
+echo -n "Generating static content from overlays..."
+  for overlaydir in ${STATIC_BASE} ${STATIC_COUNTRY} ${STATIC_BRAND}; do
+
+    # Check that we actually have something to sync
+    if [ $(ls -1A ${STATIC_PATH}/${overlaydir} |wc -l) -eq 0 ]; then
+      continue
+    fi
+
+    # Copy our files to the tmpdir
+    eval "$RSYNC_BIN $RSYNC_OPTS $STATIC_PATH/${overlaydir}/* $TMPDIR/ ${QUIET}" 
+    if [ $? -ne 0 ]; then
+      echo "Failed to copy static content (${STATIC_PATH}/${overlaydir}) to staging directory (${TMPDIR}).. Exiting!"
+      exit 1
+    fi
+  done
+echo "Done."
+
+# Handle deletion of files
+if [ "$REMOVE_TRANSFERED_FILES" == "1" ]; then
+  RSYNC_OPTS+=" --remove-sent-files"
+fi
+
+# Enable delete for remote
+RSYNC_OPTS+=" --delete"
+
+# Set our enviornment for rsync
+SSH_KEY_OPT="$SSH_BIN -i $CDN_KEY -o StrictHostKeyChecking=no -o PasswordAuthentication=no"
+export RSYNC_RSH="$SSH_KEY_OPT"
+
+# Run PreCMD
+if [ $DRY_RUN -eq 1 ]; then
+  echo "Running CDN PRE-COMMAND"
+else
+  eval "$SSH_KEY_OPT ${CDN_USER}@${CDN_MASTER} CDN_PRE ${STATIC_FQDN}"
+  if [ $? -ne 0 ]; then
+    echo "Failed to execute PRE-COMMAND on remote machine (${STATIC_FQDN}).. Exiting!"
+    exit 1
+  fi
+fi
+
+# Run the file transfer
+eval "$RSYNC_BIN ${RSYNC_OPTS} ${TMPDIR}/* ${CDN_USER}@${CDN_MASTER}:${CDN_BASEPATH}/${REMOTE_PATH} ${QUIET}"
+if [ $? -ne 0 ]; then
+  echo "Failed to transfer static content to remote machine (${STATIC_FQDN}).. Exiting!"
+  exit 1
+fi
+
+# Run PostCMD
+if [ $DRY_RUN -eq 1 ]; then
+  echo "Running CDN POST-COMMAND"
+else
+  eval "$SSH_KEY_OPT ${CDN_USER}@${CDN_MASTER} CDN_POST ${STATIC_FQDN}"
+  if [ $? -ne 0 ]; then
+    echo "Failed to execute POST-COMMAND on remote machine (${STATIC_FQDN}).. Exiting!"
+    exit 1
+  fi
+fi
+
+# Handle the dry-run
+if [ "$DRY_RUN" == "1" ]; then
+  echo "## Finished CDN push DRY RUN ##"
+else
+  echo "All static content deployed successfully."
+fi
+
+# Clean up
+if [ "$REMOVE_TRANSFERED_FILES" == "1" ]; then
+  $FIND_BIN $TMPDIR -type L -exec rm -- {} \;
+  $FIND_BIN $TMPDIR -type d -empty -prune -exec rmdir --ignore-fail-on-non-empty -p {} \;
+fi
+
+exit 0 

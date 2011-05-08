@@ -1,0 +1,10 @@
+<% form_remote_tag(:html => {:action => {:action => "unmap_guest",
+      :host_id => host.id, :guest_fn_prefix => guest.fn_prefix},
+      :title => "Unassign guest",
+      :style => "display: inline; float: right;"},
+      :url => url_for({ :action => "unmap_guest" ,
+      :host_id => host.id,
+      :guest_fn_prefix => guest.fn_prefix})) do %>
+<%= image_submit_tag "/images/silk/link_break.png", :alt => "Unassign guest" %>
+<% end %>
+      

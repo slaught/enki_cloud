@@ -1,0 +1,212 @@
+#!/bin/bash
+#
+# Michael Vallaly (June 07)
+#
+# Ver 2.0 (Nov '08)
+#
+# 20101018
+# Andy Tsouladze
+# Added support for MegaCli-8.00.29
+# Remove arch check as it is done elsewhere
+# 20101101
+# Andy Tsouladze
+# Added support for cases where enclosure is not defined
+#
+# Description:
+#
+# This plugin checks the status of MegaRAID Raid Controllers,
+# using the MegaRAID Configuration Utility CLI.
+#
+# Usage: ./check_megaraid -a <adapter_number> -P/-L 
+#
+#  Options:
+#
+#  -a                   = Adapter number
+#  -P or -L             = Check type (physical/logical)
+#
+#
+# If we don't run as root add this line to /etc/sudoers :
+# -------------------------------------------------------
+# nagios      ALL=NOPASSWD: /etc/enki/tools/raid/MegaCli
+#
+#
+# Examples:
+# ./check_megaraid -a 0 -L
+# RAID OK - Logical Disk 0 (RAID5 6662362MB) 
+# ./check_megaraid -a 0 -P
+# DISK OK - All drives functioning properly.
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+CLI_BINARY="/etc/enki/tools/raid/megacli"
+CLI_APPENDER="-NoLog"
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+#########################################################################################
+
+if [ ! -e $CLI_BINARY ]; then
+	echo "RAID UNKNOWN - MegaRAID CLI Utility not found!"
+	exit $STATE_UNKNOWN
+fi
+
+usage="Usage: ./check_megaraid -a <adapter_number> -P or -L" 
+
+while getopts "a:LP" options; do
+  case $options in
+    a ) adapter=$OPTARG;;
+    P ) check_type="physicaldrive";;
+    L ) check_type="logicaldrive";;
+    \? ) echo $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check if we got a numeric value for adapter
+adapter_num=$[adapter+0]
+
+if [ "$adapter_num" != "$adapter" ]; then
+    echo "$usage" 
+    exit $STATE_UNKNOWN
+fi
+
+# Check if our adapter number is valid
+sudo $CLI_BINARY -AdpGetTime -a $adapter $CLI_APPENDER |grep -qn "Adapter"
+
+# Can use $CLI_BINARY -Adpallinfo -aall | grep '^Adapter #' to see all adapters instead
+
+if [ $? -ne "0" ]; then
+   echo "Adapter $adapter does not exist!"
+   exit $STATE_UNKNOWN
+fi
+
+### Globals
+
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+
+  if [ "$check_type" == "physicaldrive" ]; then
+    # Phyical Drive Check
+    # Get the number of physical drives
+
+     if [ "$(sudo $CLI_BINARY -PDGetNum -a$adapter $CLI_APPENDER | grep -e 'Number of Physical Drives on Adapter ' | awk '{print $NF}')" -lt "1" ]; then
+        WARN_COUNT=1
+        output_status="No Hard Drives Found!"
+      else
+
+      for drive in $(sudo $CLI_BINARY -PDlist -a$adapter $CLI_APPENDER |tr -d ': ' |awk 'BEGIN { FS="\n" ; RS=""} {print $1":"$2}' |egrep -v "Adapter|ExitCode" |tr -d ' [:alpha:]'); do
+
+         # If there is an enclosure, $drive should be of the form "N:M"
+         # If there is no enclosure, $drive will appear as "/:M" and needs to be converted
+         # to the acceptable ":M"
+         drive=`echo $drive | sed 's/\///'`;
+
+         cli_output=`sudo $CLI_BINARY -pdInfo -PhysDrv[$drive] -a$adapter $CLI_APPENDER`
+	 pd_state=`echo "$cli_output" |grep "Firmware state:" |cut -d: -f2 |tr -d [:space:]`
+         
+        if [ "$pd_state" == "Online" ]; then
+	   continue
+        elif [ "$pd_state" == "Online,SpunUp" ]; then
+	   continue
+        elif [ "$pd_state" == "Hotspare" ]; then
+           continue
+        elif [ "$pd_state" == "Failed" ]; then
+	   CRIT_COUNT=1
+        elif [ "$pd_state" == "Unconfigured(bad)" ]; then
+           WARN_COUNT=1
+        elif [ "$pd_state" == "Unconfigured(good)" ]; then
+           WARN_COUNT=1
+        elif [ "$pd_state" == "Rebuild" ]; then
+           WARN_COUNT=1
+        else
+           UNK_COUNT=1
+	fi
+
+       output_status=`echo "Physical Disk $drive ($pd_state) " $output_status`
+
+      done
+    
+    fi
+
+  else
+    # Logical Drive Check
+    # Get the number of logical drives
+    ld_num=`sudo $CLI_BINARY -LDGetNum -a$adapter $CLI_APPENDER |grep -i "Virtual drives" |cut -d: -f2`
+  
+    for num in `seq 0 $(($ld_num - 1))`; do 
+
+      cli_output=`sudo $CLI_BINARY -LDInfo -L$num -a$adapter $CLI_APPENDER`
+
+        ld_state=`echo "$cli_output" |grep -e "^State" |cut -d: -f2 |tr -d [:space:]`
+	ld_size=`echo "$cli_output" |grep -e "^Size" |cut -d: -f2 |tr -d [:space:]`
+	ld_raid=`echo "$cli_output" |grep -e "^RAID Level:" |cut -d: -f2 |cut -d- -f2 |cut -d, -f1 |tr -d [:space:]`
+
+	if [ "$ld_state" == "Optimal" ]; then
+           ld_state=""
+        elif [ "$ld_state" == "Rebuilding" ]; then 
+	   WARN_COUNT=1
+        elif [ "$ld_state" == "Degraded" ]; then
+	   WARN_COUNT=1
+	elif [ "$ld_state" == "Partially Degraded" ]; then
+	   WARN_COUNT=1
+	elif [ "$ld_state" == "Offline" ]; then
+           CRIT_COUNT=1
+	   else
+	   UNK_COUNT=1
+	fi
+
+      output_status=`echo "Logical Disk $num $ld_state(RAID$ld_raid $ld_size) " $output_status`
+
+    done
+
+  fi
+
+
+if [ "$check_type" == "physicaldrive" ]; then
+   
+   if [ "$CRIT_COUNT" -ne 0 ]; then
+      pd_status="DISK CRITICAL"
+      EXIT_STATUS=$STATE_CRITICAL
+   elif [ "$WARN_COUNT" -ne 0 ]; then
+      pd_status="DISK WARNING"
+      EXIT_STATUS=$STATE_WARNING
+   elif [ "$UNK_COUNT" -ne 0 ]; then
+      pd_status="UNKNOWN"
+      EXIT_STATUS=$STATE_UNKOWN
+   else
+      pd_status="DISK OK"
+      output_status="All drives functioning properly."
+      EXIT_STATUS=$STATE_OK
+   fi
+
+   nagios_status=`echo "$pd_status - $output_status"`
+
+else
+
+   if [ "$CRIT_COUNT" -ne 0 ]; then
+      ld_status="RAID CRITICAL"
+      EXIT_STATUS=$STATE_CRITICAL
+ elif [ "$WARN_COUNT" -ne 0 ]; then
+      ld_status="RAID WARNING"
+      EXIT_STATUS=$STATE_WARNING
+ elif [ "$UNK_COUNT" -ne 0 ]; then
+      ld_status="UNKNOWN"
+      EXIT_STATUS=$STATE_UNKOWN
+ else
+      ld_status="RAID OK"
+      EXIT_STATUS=$STATE_OK
+   fi
+
+   nagios_status=`echo "$ld_status - $output_status"`
+
+fi
+
+echo "$nagios_status"
+exit $EXIT_STATUS
+
+

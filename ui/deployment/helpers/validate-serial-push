@@ -1,0 +1,44 @@
+#!/bin/sh
+
+# Michael Vallaly Sept '09
+
+# This script is the compliment to the push-itcfg script for the Thinklogical serial consoles. It allows remote root ssh tunneled rsyncs via public-key solely for CNU IT CFG deployment.
+
+BASECONFIG_DIR="/root/cnu"
+
+# ADD the following to authorized_keys 
+#<snip>
+## CNU IT DEPLOY KEY ##
+#command="/root/cnu/scripts/validate-serial-push",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-rsa sshkeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA == deployme@example.com
+#</snip>
+###############################################################################
+
+case "$SSH_ORIGINAL_COMMAND" in
+  *\&*)
+  echo "Rejected"
+  ;;
+  *\(*)
+  echo "Rejected"
+  ;;
+  *\{*)
+  echo "Rejected"
+  ;;
+  *\;*)
+  echo "Rejected"
+  ;;
+  *\<*)
+  echo "Rejected"
+  ;;
+  *\`*)
+  echo "Rejected"
+  ;;
+  rsync\ --server*.\ ${BASECONFIG_DIR})
+  $SSH_ORIGINAL_COMMAND
+  ;;
+  update-scs)
+  /root/cnu/scripts/cnu-configure-scs
+  ;;
+  *)
+  echo "Rejected"
+  ;;
+esac 

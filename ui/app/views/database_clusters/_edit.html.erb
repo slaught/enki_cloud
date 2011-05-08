@@ -1,0 +1,26 @@
+
+<%= f.error_messages %>
+<style>fieldset { border: none; }</style>
+<%
+# <div style="display: none" >
+# port  | integer | 
+# </div>
+%>
+<%= layout_edit_element('Name', f.text_field(:name) ) %> 
+<%= layout_edit_element('Description', f.text_field(:description) ) %> 
+
+<fieldset><legend>Version</legend>
+<%=  select("database_cluster", "version", DatabaseVersion.select_options, {} ) %>
+</fieldset>
+
+<fieldset><legend>Service</legend>
+<%= collection_select(:database_cluster, :service_id, services, :service_id, :to_label) %>
+</fieldset>
+
+<fieldset><legend>Config</legend>
+<%= collection_select(:database_cluster, :database_config_id, database_configs, :database_config_id, :to_label) %>
+</fieldset>
+<fieldset><legend>Archive mode?</legend>
+<%= f.check_box  :archive # (:database_cluster, :database_config_id, database_configs, :database_config_id, :to_label) 
+  %>
+</fieldset>

@@ -1,0 +1,51 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+            "http://www.w3.org/TR/html4/strict.dtd">
+<html lang="en">
+	<head>
+		<title>eNova Command Application</title>  		
+		<link type="text/css" href="command.css" rel="stylesheet" />
+	</head>
+	<body>
+	    <div id='command'>
+	    	<div id="search">
+				
+				<input name="search" type="text" class="search" value="Search service by name: 'SMTP', 'WEB', etc"/>
+				<span class="help_button">?</span>
+				<button class="show_all" type="button">Show All</button>
+				<button class="down_clusters_filter" type="button">Down Clusters</button>
+				<button class="down_nodes_filter" type="button">Down Nodes</button>	
+				<label>Refesh:</label>
+				<input name="refresh_period" type="text" class="refresh_period" value="10"/>
+				<div id='loadBalancers'></div>
+			</div>	    	
+			<div id="help" style="display: none">
+				<h3>Search options:</h3>
+				<ul>
+					<li>
+						<h4>Search by service name:</h4>
+						<p>Just type the service name, e.g: AU SMTP, UK PORTAL, etc</p>
+					</li>
+					<li>
+						<h4>Search by node name:</h4>
+						<p>Type "node" followed by the node name, e.g: node node1.abc, node node2.ddeft, etc</p>
+					</li>		
+					<li>
+						<h4>Search by node ip address:</h4>
+						<p>e.g: 10.10.10.101,  10.10.10.102, etc</p>
+					</li>		
+					<li>
+						<h4>Search by status page ip address:</h4>
+						<p>e.g: 172.192.0.195,  172.15.0.245, etc</p>
+					</li>		
+				</ul>
+			</div>
+			<div id='loadBalancerDetails' style="display: none">
+				Loading ....
+			</div>
+			<div id='clusters'>Loading ....</div>
+	    </div>
+		<script type='text/javascript' 
+                src='steal.js?steal[app]=command&steal[env]=production'>   
+        </script>
+	</body>
+</html>

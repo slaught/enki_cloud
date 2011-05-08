@@ -1,0 +1,18 @@
+<% set_html_title "Admin" %>
+<h1>Available pages</h1>
+<div>
+<ul>
+   <li><h2><%= link_to "PDU Plugs", :controller => "pdu", :action =>"list" %></h2> </li>
+    <li><h2><%= link_to "Network Ports", :controller => "ethernet", :action => "list" %></h2></li>
+<!--   <li><h2><%= link_to "Datacenter", :controller => "datacenter", :action =>"list" %></h2> </li> -->
+   <li><h2><%= link_to "OS Version", :controller => "software", :action =>"list" %></h2> </li>
+   <li><h2><%= link_to "Database Clusters", :controller => "database_clusters", :action =>"index" %></h2> </li>
+   <li><h2><%= link_to "Database Names", :controller => "database_names", :action =>"index" %></h2> </li>
+   <li><h2><%= link_to "Database Configs", :controller => "database_configs", :action =>"index" %></h2> </li>
+  <li><h2><%= link_to "Database Locations", :controller => "shelf", :action => "database_locations" %></h2></li>
+  <li><h2><%= link_to "Ramparts", :controller => "rampart", :action => "list" %></h2></li>
+  <li><h2><%= link_to "Activity", :controller => "shelf", :action => "activity" %></h2></li>
+  <li><h2><%= link_to "Networks", :controller => "networks", :action => "index" %></h2></li>
+  <li><h2><%= link_to "Push", :controller => "push", :action => "list" %></h2></li>
+</ul>
+</div>

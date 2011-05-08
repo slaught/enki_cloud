@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Michael Vallaly (Dec 2008) v2.0
+
+# This script reports postgreSQL connections.
+
+PGSESSION_BIN="/etc/enki/scripts/enki-pgsession"	# Path to pgsession script
+
+##############################################################################
+
+usage="$0 -v [pg_version] -c [pg_cluster]"
+
+while getopts "c:v:" options; do
+  case $options in
+    c ) PG_CLUSTER=$OPTARG;;
+    v ) PG_VERSION=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 4 ]; then
+  echo $usage
+  exit 1
+fi
+
+CONNECTION_CRIT=`/usr/bin/sudo -u postgres /usr/bin/psql --cluster $PG_VERSION/$PG_CLUSTER -c 'select * from pg_settings' | /bin/grep 'Sets the maximum number of concurrent connections' | /usr/bin/awk '{print $3}'`
+
+# Set our default cluster
+if [ "$PG_CLUSTER" == "" ]; then
+  PG_CLUSTER="usdb"
+fi
+
+# Set our default version
+if [ "$PG_VERSION" == "" ]; then
+  PG_VERSION="8.1"
+fi
+
+# Check for executable pgsession script
+if [ ! -x $PGSESSION_BIN ]; then
+  echo "Cannot execute pgsession ($PG_SESSION)! Exiting.."
+  exit 1
+fi
+
+# Generate our process list 
+PSQL_LIST=`$PGSESSION_BIN -v $PG_VERSION -c $PG_CLUSTER -n`
+if [ "$?" -ne "0" ]; then
+   echo "PGSESSION errored!"
+   exit 1
+fi  
+
+# Sum our process excluding "<IDLE>" but not "<IDLE> in transaction"
+postgres_conn=`echo "$PSQL_LIST" |grep -v -e "<IDLE>$" |wc -l`
+snmp_label=`echo "${PG_CLUSTER}_${PG_VERSION}" |tr -t \[:lower:\] \[:upper:\]`
+
+# Print the output 
+echo "${snmp_label}_CONNECTIONS:$postgres_conn:$CONNECTION_CRIT:0"
+

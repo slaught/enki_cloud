@@ -1,0 +1,24 @@
+<% set_html_title "Database Names" %>
+<h1>Database Names</h1>
+
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Description</th>
+    <th>Number of Clusters</th>
+    <th></th>
+  </tr>
+
+<% for database_name in @database_names %>
+  <tr>
+    <td><%= link_to database_name.name, database_name %></td>
+    <td><%=h database_name.description %></td>
+    <td><%=h database_name.database_clusters.length %></td>
+    <td><%= link_to 'Edit', edit_database_name_path(database_name) %></td>
+  </tr>
+<% end %>
+</table>
+
+<br />
+
+<%= link_to 'New database_name', :action => 'new' %>

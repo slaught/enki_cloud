@@ -1,0 +1,27 @@
+<% set_html_title @database_cluster.name, "Database Clusters" %>
+
+<h1><%= @database_cluster.name  %></h1>
+<div id="cluster_description" >
+<p><%= h @database_cluster.description %> </p>
+<dl>
+<dt>Version </dt> <dd><%= @database_cluster.version %></dd>
+<dt>Service </dt><dd>
+<%=link_to @database_cluster.service.url,  {:controller => 'service', :action => 'show', :id => @database_cluster.service} %>
+</dd>
+<dt>Config</dt><dd><%= link_to  @database_cluster.config.to_label, database_config_path(@database_cluster.config) %></dd>
+<dt>Archive Mode</dt><dd><%= if @database_cluster.archive? then 'archive' else 'no' end %></dd>
+</dl>
+</div>
+<%= render :partial => 'database_list', 
+           :locals => {:database_names => @database_cluster.database_names, :database_cluster =>@database_cluster } %> 
+
+<hr />
+<%= link_to 'List', database_clusters_path %> |
+
+<% permitted_to? :edit, :database_clusters do %>
+  <%= link_to 'Edit', edit_database_cluster_path(@database_cluster) %> |
+<% end -%>
+
+<% permitted_to? :delete, :database_clusters do %>
+<%= link_to( 'Destroy', url_for( :id => @database_cluster, :action => :destroy), { :confirm => 'Are you sure?', :method => :delete }) unless @database_cluster.active? %> |
+<% end -%>

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# This script outputs NGINX webserver statistics
+
+# Michael Vallaly Ver 1.0 (Oct '10)
+
+AWK_BIN="/usr/bin/awk"
+CURL_BIN="/usr/bin/curl"
+GREP_BIN="/bin/grep"
+SED_BIN="/bin/sed"
+
+NGINX_URL="http://127.0.0.1:40000/"
+
+##################################################################
+
+CURL_OPTS="-q -s -f"
+
+# Check for script dependencies
+for bindep in $AWK_BIN $CURL_BIN $GREP_BIN $SED_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!" >&2
+    exit 1
+  fi
+done
+
+# Print our usage line
+usage="Usage: $0 -G(uages) or -C(ounters)\n\n
+\t-G  Cacti Graph Guage Data\n
+\t-C  Cacti Graph Counter Data\n"
+
+# Check our parameters and set the service_type
+while getopts "CG" options; do
+  case $options in
+    C ) service_type="counter";;
+    G ) service_type="guage";;
+    * ) echo -e $usage >&2
+         exit 1;;
+  esac
+done
+
+# Check that we a service type defined
+if [ "${service_type}x" == "x" ]; then
+  echo -e $usage >&2
+  exit 1
+fi
+
+# Grab our Nginx Status
+nginx_output=`$CURL_BIN ${CURL_OPTS} ${NGINX_URL}`
+
+if [ $? -ne 0 ]; then
+  echo "Error Processing Nginx Status Request!" >&2
+  exit 1
+fi
+
+# Output the requested service type
+if [ "${service_type}" == "guage" ]; then
+  echo "${nginx_output}" |$GREP_BIN -e ": " |$SED_BIN -e 's/ W/\nW/g' |tr -d ' ' |$SED_BIN -e 's/^/Nginx_/g' -e 's/Activeconnections/ActiveConn/g'
+else
+  echo "${nginx_output}" |$GREP_BIN -e '^ [[:digit:]]' |$AWK_BIN '{print "Nginx_ConnAttempt:"$1"\nNginx_ConnProcessed:"$2"\nNginx_Requests:"$3}'
+fi

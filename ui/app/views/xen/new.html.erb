@@ -1,0 +1,18 @@
+<% set_html_title "Create New Xen Mapping" %>
+<h1>New Mapping</h1>
+
+<% form_for(:xen_mapping, @xen_mapping, :url => {:action => 'create', :id => @xen_mapping}) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :host_id %><br />
+    <%= collection_select(:xen_mapping, :host_id, Node.find_all_physical, :node_id, :fn_prefix ) %>
+  </p>
+  <p>
+    <%= f.label :guest_id %><br />
+    <%= collection_select(:xen_mapping, :guest_id, XenMapping.unassigned, :node_id, :fn_prefix ) %>
+  </p>
+
+  <p> <%= f.submit "Create" %> </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

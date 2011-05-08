@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Remove users jail for SFTP/SCP
+
+DELUSER_BIN="/usr/sbin/deluser"
+DELGROUP_BIN="/usr/sbin/delgroup"
+########################################################################################
+
+usage="Usage: $0 <userid> <data-directory>"
+
+if [ $# -lt 2 ]; then
+    echo "$usage"
+    exit 1
+fi
+
+# Check if we are running as root.
+ if [ "$UID" -ne 0 ]; then
+   echo "Superuser persmissions required to remove jailed users"
+ fi
+
+username=$1
+datadir=`dirname $2`/`basename $2`
+
+# Generate a group based on the datadir
+jailgroup=`basename $datadir`
+
+$DELUSER_BIN $username
+
+if [ $? -ne 0 ]; then
+  echo "Could not remove user.. Exiting.."
+  exit 1
+fi
+
+$DELGROUP_BIN --only-if-empty $jailgroup &> /dev/null
+
+if [ $? -eq 0 ]; then 
+  echo "#############################################################"
+  echo "No users are associated with $datadir"
+  echo "You will likey want to delete the directory!"
+  echo "#############################################################"
+fi
+

@@ -1,0 +1,9 @@
+<% set_html_title "#{@database_name.name} (Edit)", "Database Names" %>
+<h1>Editing Database Name</h1>
+<% form_for(@database_name) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f } %> 
+<p><%= f.submit "Update" %></p>
+<% end %>
+
+<%= link_to 'Show', @database_name %> |
+<%= link_to 'List', :action => :index %>

@@ -1,0 +1,27 @@
+<h3 class="clusters_title">Clusters</h3> 
+<%for(var i =0; i< this.length; i++){%>
+	<%if (this[i].kindof == "load balanced") { %>
+		<div <%= this[i] %> id='<%= this[i].identity()%>' class="cluster_type_service" summary="<%= this[i].cluster_name %>">
+		 	<div class="node_icons"></div>
+	 		<h3 class="cluster_name">
+		 		<span title='Click to expand' class='expand ui-icon ui-icon-triangle-1-e'>&nbsp;&nbsp;&nbsp;</span>
+				<a class="cluster_status" href='<%= this[i].link %>'><%= this[i].description %></a>
+			</h3>
+			
+			<div <%= plugin('command_details', { fw_mark: this[i].fw_mark } ) %> class="details"></div>
+		</div>
+	<% } %>
+<%}%>
+
+<h3 class="portfwds_title">Port Forwards</h3>
+<%for(var i =0; i< this.length; i++){%>
+	<%if (this[i].kindof == "port forward") { %>	
+		<div <%= this[i] %> id='command_models_port_fwd_<%= this[i].fw_mark %>' class="portfwd_type_service" summary="<%= this[i].cluster_name %>">
+		 	<h3 class="cluster_name">
+		 		<span class='expand ui-icon ui-icon-triangle-1-e'>&nbsp;&nbsp;&nbsp;</span>
+				<a class="cluster_status" href='<%= this[i].link %>'><%= this[i].description %></a>
+			</h3>
+			<div  <%= plugin('command_details', { fw_mark: this[i].fw_mark } ) %> class="details"></div>
+		</div>
+	<% } %>			
+<%}%>	

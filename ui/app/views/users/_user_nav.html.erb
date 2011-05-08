@@ -1,0 +1,21 @@
+<div class="menu">
+<ul>
+    <li><%= link_to "Clusters", :controller => "cluster", :action =>"list" %></li>
+    <li class="submenu"><%= link_to "Services", :controller => "service", :action =>"list" %>
+      <ul>
+        <li><%= link_to "External", :controller => "shelf", :action =>"public_services" %></li>
+        <li><%= link_to "Internal", :controller => "shelf", :action =>"private_services" %></li>
+      </ul>
+    </li>
+    <li><%= link_to "Nodes", :controller => "node", :action =>"list" %>
+    <%= render :partial => 'node/node_toc' %>
+    </li>
+    <li><%= link_to "Xen Mappings", :controller => "xen", :action =>"compare" %></li>
+    <li><%= link_to "Equipment", :controller => "machine", :action =>"list" %></li>
+    <li><%= link_to "Bootstraping", bootstraps_path %></li> 
+    <li><%= link_to "San", :controller => "san", :action =>"list" %></li>
+    <li><%= link_to "System Warnings", :controller => "shelf", :action =>"warnings" %></li>
+    <li><%= link_to "Admin", :controller => "shelf", :action =>"index" %></li>
+</ul>
+</div>
+<hr class="clear"/>

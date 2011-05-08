@@ -1,0 +1,199 @@
+#!/bin/bash
+#
+# Michael Vallaly (Nov 08)
+#
+# Description:
+#
+# This plugin checks the system health of Dell Poweredge Servers
+# using the ipmi interface 
+#
+# Usage: ./check_poweredge_health -C(acti) or -N(agios) 
+
+#
+# If we don't run as root add these lines to /etc/sudoers :
+# -----------------------------------------------------------
+# nagios      ALL=NOPASSWD: /usr/bin/ipmitool
+#
+#
+#TODO
+# Required modules i2c_i801 i2c_core
+
+# Examples:
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+BC_BIN="/usr/bin/bc"
+IPMITOOL_BIN="/usr/bin/ipmitool"
+#########################################################################################
+
+# Check that our CLI utility exists
+if [ ! -x $IPMITOOL_BIN ]; then
+	echo "Ipmitool Utility ($IPMITOOL_BIN) not found!"
+	exit $STATE_UNKNOWN
+fi
+
+# Check that bc exists
+if [ ! -x $BC_BIN ]; then
+        echo "bc ($BC_BIN) not found!"
+        exit $STATE_UNKNOWN
+fi
+
+# Print our usage line
+usage="Usage: ./check_poweredge_health -C(acti) or -N(agios) -b -f -i -p -t\n\n
+\t-N  Nagios Check Output\n
+\t-C  Cacti Graph Output\n\n
+\t-b  CMOS Battery Status\n
+\t-f  Fan Status\n
+\t-i  Chassis Intrusion\n
+\t-p  Power Supplies\n
+\t-t  Tempatures\n" 
+
+# Check our parameters and set the service_type/check_filters 
+while getopts "CNfbtpi" options; do
+  case $options in
+    C ) service_type="cacti";;
+    N ) service_type="nagios";;
+    b ) check_type="battery"
+	check_filter="|grep -e 'CMOS Battery'";;
+    f ) check_type="fans"
+	check_filter="|grep -e 'FAN' |sed -e 's/ MOD//g' |sed -e 's/RPM //g' |tr -d ' '";;
+    i ) check_type="intrusion"
+	check_filter="|grep -e 'Intrusion'";;
+    t ) check_type="temp"
+	check_filter="|grep -e 'Ambient Temp'";;
+    p ) check_type="power"
+	check_filter="|grep -e 'PS Redundancy'";;
+    \? ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+     * ) echo -e $usage
+         exit $STATE_UNKNOWN;;
+  esac
+done
+
+# Check our passed parameters
+if [ "$service_type" == "" -o "$check_type" == "" ]; then
+  echo -e $usage
+  exit $STATE_UNKNOWN
+fi 
+
+### Globals
+
+CRIT_COUNT=0
+WARN_COUNT=0
+UNK_COUNT=0
+
+# Generate our systemwide status (reverse sort)
+CLI_OUTPUT=`eval "sudo $IPMITOOL_BIN sdr |grep -v -e 'Not Readable' -e 'disabled' $check_filter" |sort -r`
+
+
+# If we want nagios output
+if [ "$service_type" == "nagios" ]; then
+
+     # Delimit on newline only
+     IFS=$'\n'
+
+     for device in $CLI_OUTPUT; do
+
+       # Split our output for comparison
+       device_label=`echo $device |awk -F'|' '{print $1}'`
+       device_value=`echo $device |awk -F'|' '{print $2}' |tr -d ' '`
+       device_status=`echo $device |awk -F'|' '{print $3}'|tr -d ' '`
+
+       # Tempature Check
+       if [ "$check_type" == "temp" ]; then
+
+         # Convert C to F
+         temp=`echo "1.8*$(echo $device_value|tr -d '[:alpha:]')+32" |$BC_BIN`
+         device_label="System Temperature ($temp)"
+
+       # Power Supply Check
+       elif [ "$check_type" == "power" ]; then
+         device_label="Redundant Powersupply"
+           
+         # Verify power redundancy
+         if [ "$device_value" != "0x01" ]; then
+           device_status="failed"
+         fi 
+
+       # Battery Check
+       elif [ "$check_type" == "battery" ]; then
+         device_label="Battery Voltage"
+
+       # Fan Check
+       elif [ "$check_type" == "fans" ]; then
+         device_label="$device_label ($device_value)"
+       
+       # Chassis Intrusion Check
+       elif [ "$check_type" == "intrusion" ]; then
+         device_label="Chassis Intrusion"
+    
+       fi
+
+ 
+       # Check if the output is OK
+       if [ "$device_status" == "ok" ]; then
+          output_status=`echo "$device_label - OK " $output_status`
+          continue   
+       else 
+          output_status=`echo "$device_label - FAILED " $output_status` 
+          CRIT_COUNT=1
+          continue
+       fi
+     
+     done
+
+# Print output for Cacti
+else
+
+  # Delimit on newline only
+  IFS=$'\n'
+
+  for device in $CLI_OUTPUT; do
+
+    # Split our output for comparison
+    device_label=`echo $device |awk -F'|' '{print $1}'`
+    device_value=`echo $device |awk -F'|' '{print $2}' |tr -d ' '`
+
+    # Temp Check
+    if [ "$check_type" == "temp" ]; then
+       
+      # Convert C to F
+      temp=`echo "1.8*$(echo $device_value|tr -d '[:alpha:]')+32" |$BC_BIN`
+      echo "System Temperature:$temp: "       
+
+    # Fan Check
+    elif [ "$check_type" == "fans" ]; then
+      output_status+=`echo "$device_label:$device_value::\n"`    
+   
+    # Everything else 
+    else   
+      output_status=r`echo "$device_value:N/A"`
+    fi
+
+  done
+
+  # Print some output
+  echo -ne "$output_status" |sort
+
+  exit 0
+
+fi
+
+# Generate the proper exit status for nagios
+if [ "$CRIT_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_CRITICAL
+elif [ "$WARN_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_WARNING
+elif [ "$UNK_COUNT" -ne 0 ]; then
+   EXIT_STATUS=$STATE_UNKOWN
+else
+   EXIT_STATUS=$STATE_OK
+fi
+
+# Print out status and exit
+echo -n "$output_status"
+exit $EXIT_STATUS
+
+

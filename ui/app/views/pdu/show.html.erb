@@ -1,0 +1,37 @@
+<% set_html_title @pdu.to_label, "PDU Plug Mappings" %>
+<% if @pdu.node_type.node_type == "pdu" %>
+<h1><%= link_to_node(@pdu) %></h1>
+<br/>
+<h2>Plug Mappings</h2>
+<table>
+  <tr>
+    <th>Hostname</th>
+    <th>Outlet</th>
+  </tr>
+<% for p in @plugs %>
+  <tr>
+    <td><%= link_to_node(p.node) %></td>
+    <td><%= p.outlet_no %></td>
+    <% permitted_to? :unplug_pdu, :node do %>
+    <td class="td_extra">
+    <% form_remote_tag(:html => {:id=>"remove_pdu_#{p.id}",
+         :action => { :controller => "node", :action => "unplug_pdu", :id => p.node.id}},
+         :url => url_for({ :controller => "node", :action => "unplug_pdu", :id => p.node.id}),
+         :update => 'node_pdus') do  %>
+    <%= hidden_field_tag( "pdus_id", p.id ) %>
+    <%= image_submit_tag "/images/silk/delete.png" %>
+    <% end %>
+    </td>
+    <% end %>
+  </tr>
+<% end %>
+</table>
+<% else %>
+<h1>Sorry, this node is not a PDU</h1>
+<% end %>
+
+<br/>
+<ul class="horiz_nav">
+  <li><%= link_to "Back to PDU List", :action => "list" %></li>
+</ul>
+

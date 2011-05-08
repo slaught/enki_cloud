@@ -1,0 +1,12 @@
+<% set_html_title "Create New Bootstrap" %>
+<h1>New bootstrap</h1>
+
+<% form_for(@bootstrap) do |f| %>
+  <%= f.error_messages %>
+
+  <p>
+    <%= f.submit "Create" %>
+  </p>
+<% end %>
+
+<%= link_to 'Back', bootstraps_path %>

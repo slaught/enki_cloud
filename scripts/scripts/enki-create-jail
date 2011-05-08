@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Create user jails for Sftp/SCP
+
+ADDUSER_BIN="/usr/sbin/adduser"
+GROUPADD_BIN="/usr/sbin/groupadd"
+FIRSTUID="2000"
+########################################################################################
+
+usage="Usage: $0 <userid> <data-directory>"
+
+if [ $# -lt 2 ]; then
+    echo "$usage"
+    exit 1
+fi
+
+# Check if we are running as root.
+ if [ "$UID" -ne 0 ]; then
+   echo "Superuser persmissions required to add jailed users"
+   exec sudo $0 $@
+ fi
+
+username=$1
+datadir=`dirname $2`/`basename $2`
+
+# Sanity check the jail creation
+exist_accounts=`cat /etc/passwd |cut -d: -f6 |grep -e "$datadir\$" |sort -u |grep -cve "^$datadir\$"`
+
+if [ $exist_accounts -gt 0 ]; then
+  echo "ERROR: The data directory specified (${datadir}) is the basepath used via ${exist_accounts} other jailed account(s)."
+  echo "Refusing to destroy existing accounts datasets, please remove the dependent account(s) first. Exiting!"
+  exit 1
+fi 
+
+# Generate a group based on the datadir
+jailgroup=`basename $datadir`
+
+$GROUPADD_BIN -K "GID_MIN=$FIRSTUID" -f $jailgroup
+
+if [ $? -ne 0 ]; then
+  echo "Could not add group.. Exiting.."
+
+  exit 1
+fi
+
+$ADDUSER_BIN --firstuid=$FIRSTUID --shell "/usr/sbin/scponlyc" --home "$datadir" --ingroup "$jailgroup" "$username" --force-badname
+
+if [ $? -ne 0 ]; then
+  echo "User addition failed.. Removing old groups.."
+  exit 1
+fi
+
+# Call the jail update script
+/etc/enki/scripts/enki-update-jail $datadir

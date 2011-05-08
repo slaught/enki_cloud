@@ -1,0 +1,10 @@
+<% set_html_title "#{@database_cluster.name} (Edit)", "Database Clusters" %>
+<h1>Editing Database Cluster</h1>
+<% form_for(@database_cluster, :url => {:action => 'update'}) do |f| %>
+
+<%= render :partial => 'edit', :locals => {:f => f, :services => @services, :database_configs => @database_configs } %> 
+<p><%= f.submit "Update" %></p>
+<% end %>
+
+<%= link_to 'Show', @database_cluster %> |
+<%= link_to 'List', database_cluster_path %>

@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# Michael Vallaly (Aug 2008)
+
+# This script configures local interfaces for use in Campus Heartbeat network 
+# NOTE: This script may be called from /etc/network/interfaces without parameters
+
+HRTBEAT_NETWORKS="10.15.254.0/28 10.15.254.16/28 10.15.254.32/28"
+
+IP_BIN="/bin/ip"
+IPCALC_BIN="/usr/bin/ipcalc"
+
+########################################################################################
+
+usage="Usage: $0 -i <interface> -m <add/del>"
+
+while getopts "i:m:" options; do
+  case $options in
+    i ) interfaces+=" $OPTARG";;
+    m ) action=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check for ifup/down enviornment variables
+if [[ -n $MODE && -n $IFACE ]]; then
+   interfaces=$IFACE
+   action=$MODE
+fi
+
+# Figure out what we are doing
+case $action in
+   start ) action="add";;
+     add ) action="add";;
+    stop ) action="del";;
+     del ) action="del";;
+       * ) echo $usage
+           exit 1;;
+esac
+
+# Check for required binaries
+for req_bin in $IP_BIN $IPCALC_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+for interface in $interfaces; do
+
+  # Check that the interface exists before we go playing with it
+  if ! ($IP_BIN addr |egrep -nqe "inet.*$interface" && $IP_BIN link |egrep -nqe "$interface.*,UP"); then
+    continue
+  fi
+
+  # Get some device info
+  device_ipnet=`$IPCALC_BIN $($IP_BIN addr show $interface |grep -e "inet " |awk '{print $2}')`
+
+  # Grab the locally configured network for the device
+  localnet=`echo "$device_ipnet" |grep -e "^Network: " |awk '{print $2}'`
+
+  # Grab the correct default gw (always the first host)
+  local_gw=`echo "$device_ipnet" |grep -e "^HostMin: " |awk '{print $2}'`
+
+  # Configure our remote networks
+  for network in $HRTBEAT_NETWORKS; do
+
+    # Don't add networks if they are locally connected
+    if [[ "$localnet" == "$network" ]]; then
+      continue
+    else
+
+      # Set our gateway to remote heartbeat networks
+      $IP_BIN route $action $network via $local_gw dev $interface
+
+    fi
+
+  done
+
+done
+

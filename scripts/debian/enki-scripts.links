@@ -1,0 +1,5 @@
+/enki/bin/updown-cluster.sh enki/bin/downcluster
+/enki/bin/updown-cluster.sh enki/bin/upcluster
+/enki/bin/updown-node.sh enki/bin/upnode
+/enki/bin/updown-node.sh enki/bin/downnode
+/etc/enki/scripts/enki-firewall /etc/init.d/enki-firewall

@@ -1,0 +1,6 @@
+<% fmt = {}
+  @database_clusters.each do |c| 
+     fmt[c.name] = {:config => [url_for(:id => c, :action => :config), "postgresql.conf" ] } 
+  end
+-%>
+<%= fmt.to_yaml -%>

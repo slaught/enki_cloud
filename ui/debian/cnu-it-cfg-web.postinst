@@ -1,0 +1,72 @@
+#!/bin/bash 
+
+/usr/bin/id cnuit > /dev/null
+U=$?
+/usr/bin/id -g cnuit > /dev/null
+G=$?
+if [ $U -eq 0 -a $G -eq 0 ] ;then
+  /bin/true
+else
+/usr/sbin/adduser --system --group --gecos "CNU IT Application User" --disabled-login --disabled-password cnuit
+fi
+
+# Automatically added by dh_installinit
+if [ -x "/etc/init.d/cnu-it" ]; then
+	update-rc.d cnu-it defaults >/dev/null
+	if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+		invoke-rc.d cnu-it start || exit $?
+	else
+		/etc/init.d/cnu-it start || exit $?
+	fi
+fi
+# End automatically added section
+
+# restart nginx
+/etc/init.d/nginx restart
+
+#
+# Send out production change emails
+CL=/usr/share/doc/cnu-it-cfg-web/changelog.gz 
+
+# echo postinst $@, $1 $2 $3 , $# 
+## generate production_change email
+#  find the changelog
+#  grep -n -m 1 0.3.1 debian/changelog | awk -F: '{print $1}'
+#  awk '     BEGIN { RS = "\n" ; FS = " " } FNR < 21 { print ;}' debian/changelog
+MAILSUBJ='IT Production Change' 
+
+if [ $HOSTNAME == 'haskell' ]; then
+MAILTO="itcfg+test@example.com"
+else
+MAILTO="production_change@example.com"
+fi
+
+case $1 in
+configure)
+  oldversion=$2
+  CHANGELOG=`gzip -dc $CL | awk "/cnu-it-cfg-web \($oldversion\)/ { exit 0 } // {print }" ` 
+  # if the version is the current version. Then changelog will be empty
+  # send full changelog of first time.
+  if [ ${#CHANGELOG} -lt 1 ]; then 
+    CHANGELOG=`gzip -dc $CL`
+    MSG1="new installation of cnu-it-cfg-web package"
+  else 
+    MSG1="upgrade of cnu-it-cfg-web package from $oldversion"
+  fi 
+  DATE=`date`
+  WHO=${SUDO_USER:-$USER}
+  MSG="IT Production Change: $DATE
+$WHO@$HOSTNAME : $MSG1 
+$CHANGELOG"
+;;
+*) /bin/true ;;
+esac
+
+#
+if [ ${#MSG} -lt 1 ]; then
+  /bin/true
+else
+  cat - <<<"$MSG" |  mail -a "From: cnu-it-cfg-web <itcfg@example.com>" -s "$MAILSUBJ" $MAILTO  
+fi
+exit 0
+

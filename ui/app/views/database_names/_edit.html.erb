@@ -1,0 +1,10 @@
+<%= f.error_messages %>
+<style>fieldset { border: none; }</style>
+<%
+# <div style="display: none" >
+# port  | integer | 
+# </div>
+%>
+<%= layout_edit_element('Name', f.text_field(:name,:tabindex=>1) ) %> 
+<%= layout_edit_element('Description', f.text_field(:description,:tabindex=>2) ) %> 
+

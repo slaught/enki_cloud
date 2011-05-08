@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+  
+include /usr/share/cdbs/1/rules/debhelper.mk
+include /usr/share/cdbs/1/class/makefile.mk
+
+# Add here any variable or target overrides you need.
+
+DEB_DH_INSTALL_SOURCEDIR=debian/tmp/
+DEB_MAKE_INSTALL_TARGET = install DESTDIR=$(DEB_DESTDIR)
+#        dh_installdeb -p$(cdbs_curpkg) $(DEB_DH_INSTALLDEB_ARGS)
+DEB_DH_INSTALLDEB_ARGS= && (rm debian/$(cdbs_curpkg)/DEBIAN/conffiles; /bin/true)
+
+
+

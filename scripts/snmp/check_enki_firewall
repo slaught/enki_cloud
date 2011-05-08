@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Michael Vallaly (July '09) Ver 1.5
+
+# This script checks that ENKI-Firewall has been applied on the local machine.
+
+IPTABLES_BIN="/sbin/iptables"
+LB_CONFIG="/etc/enki/configs/node/lb.services"
+
+#########################################################################################
+
+STATE_UNKNOWN="3"
+STATE_CRITICAL="2"
+STATE_WARNING="1"
+STATE_OK="0"
+
+IPTABLES_INPUT=`$IPTABLES_BIN -nvL INPUT 2>&1`
+
+if [ "$?" -ne "0" ]; then
+  echo "Failed to execute $IPTABLES_BIN!"
+  exit $STATE_UNKNOWN
+fi
+
+interface_ct=`echo "$IPTABLES_INPUT" |grep -e " ACCEPT     [(tc)|(ud)]" |awk '{print $6}' |grep -ve 'tunl' -e '*' |sort -u |wc -l`
+service_ct=`echo "$IPTABLES_INPUT"  |grep -e " dpt:" |awk '{print $11}' |sort -u |wc -l`
+
+if [ -e $LB_CONFIG ]; then
+  other_ct="- `$IPTABLES_BIN -nvL PREROUTING -t mangle |grep -e " dpt:" |awk '{print $9 $11}' |wc -l` LB Services(s) "
+  fwtype="LB"
+elif [ -e "/proc/xen/xsd_port" ]; then
+  other_ct="- `$IPTABLES_BIN -nvL FORWARD |grep -e " ACCEPT " |awk '{print $6}' |sort -u |wc -l` XEN Bridge(s) "
+  fwtype="XEN"
+else
+  other_ct="- `$IPTABLES_BIN -nvL OUTPUT |grep -e "TCPMSS" |awk '{print $8}' |sort -u |wc -l` HA Service(s) "
+  fwtype="Node"
+fi
+
+IPTABLES_FILTER=`$IPTABLES_BIN -nvL 2>/dev/null`
+
+if [ `echo "$IPTABLES_FILTER" |grep -ce 'Chain INPUT (policy DROP'` -eq 1 ] && [ `echo "$IPTABLES_FILTER" |grep -ce 'Chain FORWARD (policy DROP'` -eq 1 ] ; then
+  echo "${fwtype} Firewall running [ $interface_ct interface(s) - $service_ct local services(s) $other_ct]"
+  exit $STATE_OK
+else
+  echo "${fwtype} Firewall not running!"
+  exit $STATE_CRITICAL
+fi 
+
+

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# This script outputs a persistant name based on the iscsi target name for a given block device
+# Designed for use with the Kernel DM-Multipather and iSCSI targets 
+
+# Micahael Vallaly (05/07)
+
+LSSCSI_BIN="/usr/bin/lsscsi"
+DMSETUP_BIN="/sbin/dmsetup"
+DEVMAP_NAME_BIN="/sbin/devmap_name"
+
+#########################################################################################
+
+usage="$0 <device major:minor>"
+
+# Check for needed commandline arguments
+if [ $# -lt 1 ]; then
+  echo "$usage"
+  exit 1
+fi
+
+# Make sure lsscsi utility exists
+if [ ! -f $LSSCSI_BIN ]; then
+  echo "Cannot execute ($LSSCSI_BIN).. Please make sure it is installed!"
+  exit 1
+fi
+
+# Make sure dmsetup utility exists
+if [ ! -f $DMSETUP_BIN ]; then
+  echo "Cannot execute ($DMSETUP_BIN).. Please make sure it is installed!"
+  exit 1
+fi
+
+# Make sure devmap_name utility exists
+if [ ! -f $DEVMAP_NAME_BIN ]; then
+  echo "Cannot execute ($DEVMAP_NAME_BIN).. Please make sure it is installed!"
+  exit 1
+fi
+
+# Parse our Input
+devmap_device=$1
+devmap_major=`echo $devmap_device |cut -d: -f1`
+devmap_minor=`echo $devmap_device |cut -d: -f2`
+
+# Get the DM Name for the Kernel Major:Minor
+dm_name=`$DEVMAP_NAME_BIN $devmap_device`
+
+# Figure out the DM dependencies
+phy_device=`$DMSETUP_BIN -j $devmap_major -m $devmap_minor deps |cut -d: -f2 |tr -d " (" |tr -t ")" "\n" |tr -t "," ":" |head -1`
+
+# Split up the Major:Minor Numbers
+phy_major=`echo $phy_device |cut -d: -f1`
+phy_minor=`echo $phy_device |cut -d: -f2`
+
+# Check if we are a devicemapper partition
+if [ "$phy_major" == "254" ]; then
+
+  # Grab the partition number (udev + kpartx)
+  partition_number=`echo $dm_name |cut -d- -f2`
+
+  # Rerun the DM dependencies on the parent
+  phy_device=`$DMSETUP_BIN -j $phy_major -m $phy_minor deps |cut -d: -f2 |tr -d " (" |tr -t ")" "\n" |tr -t "," ":" |head -1`  
+
+fi
+
+# Get the IQN for the device
+iqn=`$LSSCSI_BIN -td |grep "\[$phy_device\]\$" |awk '{print $3}' |cut -d, -f1`
+
+# Print out output
+if [[ $iqn == "" ]]; then
+  exit 1
+elif [[ $partition_number == "" ]]; then
+  echo "$iqn $dm_name"
+else
+  echo "$iqn-$partition_number $dm_name" 
+fi
+

@@ -1,0 +1,62 @@
+#!/bin/bash
+#============================================================================
+# /etc/xen/vif-bridge
+#
+# Script for configuring a vif in bridged mode.
+# The hotplugging system will call this script if it is specified either in
+# the device configuration given to Xend, or the default Xend configuration
+# in /etc/xen/xend-config.sxp.  If the script is specified in neither of those
+# places, then this script is the default.
+#
+# Usage:
+# vif-bridge (add|remove|online|offline)
+#
+# Environment vars:
+# vif         vif interface name (required).
+# XENBUS_PATH path to this device's details in the XenStore (required).
+#
+# Read from the store:
+# bridge  bridge to add the vif to (optional).  Defaults to searching for the
+#         bridge itself.
+# ip      list of IP networks for the vif, space-separated (optional).
+#
+# up:
+# Enslaves the vif interface to the bridge and adds iptables rules
+# for its ip addresses (if any).
+#
+# down:
+# Removes the vif interface from the bridge and removes the iptables
+# rules for its ip addresses (if any).
+#============================================================================
+
+dir=$(dirname "$0")
+. "$dir/vif-common.sh"
+
+bridge=${bridge:-}
+bridge=$(xenstore_read_default "$XENBUS_PATH/bridge" "$bridge")
+
+if [ -z "$bridge" ]
+then
+  bridge=$(brctl show |grep -ve "^bridge name" |cut -d " " -f2 |cut -f1 |head -1)
+
+  if [ -z "$bridge" ]
+  then
+     fatal "Could not find bridge, and none was specified"
+  fi
+fi
+
+case "$command" in
+    online)
+        $dir/network-bridge-vlan bridge=$bridge start 
+        ;;
+
+    offline)
+        $dir/network-bridge-vlan bridge=$bridge stop 
+        ;;
+esac
+
+log debug "Successful vif-bridge $command for $vif, bridge $bridge."
+if [ "$command" == "online" ]
+then
+  success
+fi

@@ -1,0 +1,49 @@
+plugin declarative_authorization
+origin	git://github.com/stffn/declarative_authorization.git
+commit 17caf95eb61b0c45da9abf0b00fe47aec5b28c0b
+Author: Ari Epstein <ate2@ari-shuttle.dayadmin.cornell.edu>
+Date:   Fri Jul 9 09:10:49 2010 -0400
+
+    Add gt, gte, lt, lte comparison with tests.
+plugin machinist
+origin	git://github.com/notahat/machinist.git
+commit 74a63b09132f4e629c3431ee3d01eea94c813a0d
+Author: Pete Yandell <pete@notahat.com>
+Date:   Tue Jan 19 01:09:15 2010 +1100
+
+    Fixed install docs to match the latest Rails.
+plugin paper_trail
+origin	git://github.com/airblade/paper_trail.git
+commit 53e1eb419423b6fae7656e2fdd8f8a8b9c8a5ab4
+Author: Andy Stewart <boss@airbladesoftware.com>
+Date:   Fri Jul 24 17:46:49 2009 +0100
+
+    Version bump to 1.1.2
+plugin restful-authentication
+origin	git://github.com/technoweenie/restful-authentication.git
+commit a2c350791633f731a72c88c1b7ccbcfa71b11be0
+Author: Fabien Jakimowicz <fabien@jakimowicz.com>
+Date:   Thu Jul 8 06:12:28 2010 +0800
+
+    use '!' instead of .not for maximum compatibility
+plugin static_record_cache
+origin	git://github.com/blythedunham/static_record_cache.git
+commit 3c8226886a99128a776b5a81f27c7aab8f4ce529
+Author: Blythe Dunham <blythe@snowgiraffe.com>
+Date:   Thu Dec 31 19:11:17 2009 -0800
+
+    Create static_record_cache gem
+plugin will_paginate
+origin	git://github.com/mislav/will_paginate.git
+commit 2a80334b87db42241aacd493db661e8585a6dc8d
+Author: Kevin Glowacz <kevin@glowacz.info>
+Date:   Tue Jul 6 15:49:59 2010 -0500
+
+    fix unordered failing test
+plugin resque
+origin git://github.com/defunkt/resque.git
+commit aba6f6f52560cce9c1bb842786db10903814ca25
+Author: Chris Wanstrath <chris@ozmm.org>
+Date:   Mon Aug 23 19:43:32 2010 -0700
+
+    v1.11.0

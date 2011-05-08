@@ -1,0 +1,11 @@
+<% set_html_title "Ramparts" %>
+<h1>Ramparts</h1>
+
+<% if permitted_to? :create, :rampart %>
+<div>
+  <ul>
+    <li><%= link_to "New Rampart", :controller => 'rampart', :action => "new" %></li>
+  </ul>
+</div>
+<% end %>
+<%= render :partial => 'rampart_list', :locals => {:ramparts => @ramparts} %>

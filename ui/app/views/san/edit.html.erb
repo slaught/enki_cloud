@@ -1,0 +1,31 @@
+<% set_html_title "#{@san.san_name} (Edit)", "San Management" %>
+<h1>Editing <%= @san.san_name %></h1>
+
+<% form_for(:san, @san, :url => {:action => 'update', :id => @san }) do |f| %>
+  <%= f.error_messages %>
+  <p>
+    <%= f.label :san_name %><br />
+  <% if permitted_to? :change, :san then %>
+    <%= f.text_field :san_name  %>
+  <% else %>
+    <%= @san.san_name %>
+  <% end %>
+  </p>
+  <p>
+    <%= f.label :description  %><br />
+    <%= f.text_field :description %>
+  </p>
+
+  <p><%= f.label :network %><br />
+  <%if @san.nodes.empty? and permitted_to?(:change, :san) then %>
+    <%= collection_select(:san, :network_id, @networks, :network_id, :to_label ) %> 
+  <% else %>
+    <%= @san.network.to_label %> 
+  <% end %>
+  </p>
+    <%= f.submit "Save Changes" %>
+<% end %>
+
+
+<%= link_to 'Show', :action => 'show', :id => @san %> |
+<%= link_to 'Back', :action => 'list' %>

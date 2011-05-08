@@ -1,0 +1,16 @@
+<div id="ip_addresses">
+<% if not network_ips.empty? %>
+  <table class="sortable">
+  <tr>
+    <th>IP Address</th>
+  </tr>
+  <% network_ips.each do |ip| %>
+    <tr>
+    <td sorttable_customkey="<%= sorttable_ip(ip.to_label) %>"><%= ip.to_label %></td>
+    </tr>
+  <% end %>
+  </table>
+<% else %>
+  <p><em>None assigned yet.</em></p>
+<% end %>
+</div>

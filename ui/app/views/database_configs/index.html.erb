@@ -1,0 +1,42 @@
+<% set_html_title "Database Configurations" %>
+<h1>Database Configurations</h1>
+
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Max connections</th>
+    <th>Work mem</th>
+    <th>Search path</th>
+<th>Shared Buffers</th>
+<th>Maintenance Memory</th>
+<th>Temp Buffers</th>
+<th>timezone</th>
+<th>log_min_duration_statement</th>
+<th>effective_cache_size</th>
+    <th>Disk size</th>
+    <th></th>
+  </tr>
+
+<% for database_config in @database_configs %>
+  <tr>
+<!--    <td><%=h database_config.name %></td> -->
+    <td><%= link_to database_config.name, database_config %></td>
+    <td><%=h database_config.max_connections %></td>
+    <td><%=h database_config.work_mem %></td>
+    <td><%=h database_config.search_path %></td>
+    <td><%=h database_config.shared_buffers %></td>
+    <td><%=h database_config.maintenance_mem %></td>
+    <td><%=h database_config.temp_buffers %></td>
+    <td><%=h database_config.timezone %></td>
+    <td><%=h database_config.log_min_duration_statement%></td>
+    <td><%=h database_config.effective_cache_size%></td>
+
+    <td><%=h database_config.disk_size %></td>
+    <td><%= link_to 'Edit', edit_database_config_path(database_config) %></td>
+  </tr>
+<% end %>
+</table>
+
+<br />
+
+<%= link_to 'New database_config', new_database_config_path %>

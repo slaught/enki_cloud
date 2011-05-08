@@ -1,0 +1,11 @@
+#!/bin/bash
+VERSION=8.00.29
+
+# Determine our architecture
+if [ "$(/bin/uname -m)" == "x86_64" ]; then
+	MEGACLI=MegaCli64-$VERSION
+else
+	MEGACLI=MegaCli-$VERSION
+fi
+export LD_LIBRARY_PATH=/etc/enki/tools/raid
+exec /etc/enki/tools/raid/$MEGACLI "$@"

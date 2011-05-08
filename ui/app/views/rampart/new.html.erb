@@ -1,0 +1,54 @@
+<% set_html_title "Create New Rampart" %>
+<h1>New Rampart</h1>
+
+<% form_for(:rampart, @rampart, :url => {:action => "create"}, :html => {:class => "new_form"}) do |f| %>
+  <%= f.error_messages %>
+  <br />
+  <%= f.label :node %>
+  <%= collection_select(:rampart, :node_id, Node.all.sort_by{|n| n.to_label}, :id, :to_label) %>
+
+  <%= f.check_box :has_public_ip, :class => 'left_side' %>
+  <%= f.label :has_public_ip, 'Has public ip?' %>
+  <hr class="clear">
+
+  <%= f.check_box :has_service_ip, :class => 'left_side' %>
+  <%= f.label :has_service_ip, 'Has service ip?' %>
+  <hr class="clear">
+
+  <%= f.label :home_network %>
+  <%= select(:rampart, :home_network, {"Prod" => "prod", "Dev" => "dev", "QA" => "qa", "BI" => "bi"}) %>
+
+  <%# f.label :access_to %>
+  <%# f.text_field :access_to %>
+  
+  <%# f.label :access_locations %>
+  <%# f.text_field :access_locations %>
+  
+  <% permitted_to? :manage_rampart_ip, :rampart do %>
+    <% field_set_tag "IP Addresses" do %>
+      <%= f.label :network_ip %>
+      <%= f.text_field :network_ip %>
+    <% end %>
+  <% end %>
+
+  <%# f.label :locale_ip_range %>
+  <%# f.text_field :locale_ip_range %>
+
+  <%# f.label :locale_vlan %>
+  <%# f.text_field :locale_vlan %>
+
+  <%# f.label :src_port %>
+  <%# f.text_field :src_port %>
+
+  <%# f.label :dest_port %>
+  <%# f.text_field :dest_port %>
+
+  <%# f.label :nat_type %>
+  <%# f.text_field :nat_type %>
+
+  <%# f.label :remote_vlan %>
+  <%# f.text_field :remote_vlan %>
+
+  <%= f.submit "Create" %>
+<% end %>
+<%= link_to "Back", {:action => "list"} %>

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Michael Vallaly (Aug 2010) v1.0
+
+# This script reports postgreSQL transactions per database per database cluster.
+
+##################################################################################
+
+usage="$0 -v [pg_version] -c [pg_cluster]"
+
+while getopts "c:v:" options; do
+  case $options in
+    c ) PG_CLUSTER=$OPTARG;;
+    v ) PG_VERSION=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+if [[ "${PG_CLUSTER}x" == "x" ]] && [[ "${PG_VERSION}x" == "x" ]]; then 
+  CLUSTER_LIST=`pg_lsclusters --no-header |awk '{print $1"/"$2}'`
+else
+  CLUSTER_LIST="$PG_VERSION/$PG_CLUSTER"
+fi
+
+for cluster in $CLUSTER_LIST; do
+  
+   cluster_name=`echo $cluster |awk -F/ '{print $2"_"$1}' |tr -t '[:lower:]' '[:upper:]'`
+
+   for line in `/usr/bin/sudo -u postgres /usr/bin/psql --cluster ${cluster} -t -c "SELECT datname, xact_commit FROM pg_stat_database where datname like '%prod%';" |tr -d ' ' |tr -t '|' ':'`; do
+  	echo "${cluster_name}_COMMIT_${line}"
+   done
+
+   for line in `/usr/bin/sudo -u postgres /usr/bin/psql --cluster ${cluster} -t -c "SELECT datname, xact_rollback FROM pg_stat_database where datname like '%prod%';" |tr -d ' ' |tr -t '|' ':'`; do
+   	echo "${cluster_name}_ROLLBACK_${line}"
+   done
+
+done
+

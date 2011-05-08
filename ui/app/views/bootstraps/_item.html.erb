@@ -1,0 +1,36 @@
+<% unless @bootstrap.ready? %>
+<h2 style="color: red">Not Ready</h2>
+<% unless @bootstrap.stage_one? %>  
+<h3 style="color: red">Stage One Waiting</h3>
+<% end %>
+<% unless @bootstrap.stage_two? %>  
+<h3 style="color: red">Stage Two Waiting</h3>
+<% end %>
+<% end %>
+<dl>
+<dt>uuid_tag</dt><dd> <%= @bootstrap.uuid_tag %> </dd>
+<dt>service_tag</dt><dd> <%= @bootstrap.service_tag %> </dd>
+<dt>product name</dt><dd> <%= @bootstrap.product_name%> </dd>
+<dt>ready stage one? </dt><dd> <%= @bootstrap.stage_one? %> </dd>
+<dt>ready stage two? </dt><dd> <%= @bootstrap.stage_two? %> </dd>
+<dt>node</dt><dd> 
+<% if @bootstrap.node.nil?  %>
+  no node
+<% else %>
+<%= link_to @bootstrap.node.fn_prefix, :action => "show",:controller=>"node",:id=> @bootstrap.node %>
+<% end %>
+</dd>
+<dt>Machine</dt> <dd>
+<% if @bootstrap.model then %>
+  <%= @bootstrap.model.to_label %>
+<% else %>
+no machine model found for <%= @bootstrap.product_name %> 
+<% end %>
+</dd>
+</dl>
+<div style="display: none">
+<h6>dmesg</h6><p><pre><%= @bootstrap.dmesg %></pre></p>
+<h6>dmidecode</h6><p><pre><%= @bootstrap.dmidecode %></pre></p>
+<h6>proc_cpuinfo</h6><p><pre><%= @bootstrap.proc_cpuinfo %></pre></p>
+<h6>proc_meminfo</h6><p><pre><%= @bootstrap.proc_meminfo %></pre></p>
+</div>

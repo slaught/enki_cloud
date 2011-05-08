@@ -1,0 +1,64 @@
+#!/usr/bin/python
+import sys,os,xmpp,time
+
+CONF="conference.example.com"
+debug=False
+
+if len(sys.argv) < 2:
+  print "Syntax: xsend room text"
+  sys.exit(0)
+
+ConfRoom=sys.argv[1]
+text=' '.join(sys.argv[2:])
+
+def getProdBot(passwordFile):
+  jidparams={}
+  if os.access(passwordFile,os.R_OK):
+    for ln in open(passwordFile).readlines():
+        if not ln[0] in ('#',';'):
+           key,val=ln.strip().split('=',1)
+           jidparams[key.lower()]=val
+  for mandatory in ['jid','password']:
+    if mandatory not in jidparams.keys():
+       print 'Please point ' + passwordFile + ' config file to valid JID for sending messages.'
+       sys.exit(0)
+  return jidparams
+def hostname():
+  import commands 
+  return commands.getoutput('hostname -s')
+
+def main():
+  passwordFile="/etc/enki/keys/jabber_password"
+  jidparams = getProdBot(passwordFile)
+  jid=xmpp.protocol.JID(jidparams['jid']+'.'+hostname())
+  cl=xmpp.Client(jid.getDomain(),debug=[])
+  con=cl.connect()
+  if not con:
+    print 'could not connect!'
+    return -1 
+  if debug:
+    print 'connected with',con
+  auth=cl.auth(jid.getNode(),jidparams['password'],resource=jid.getResource())
+  if not auth:
+    print 'could not authenticate!'
+    return -2
+  if debug:
+    print 'authenticated using',auth
+  cl.sendInitPresence(requestRoster=0)
+  room = ConfRoom + '@' + CONF
+  join_room = room + '/' +  jid.getResource()
+  x = cl.send(xmpp.Presence(to=join_room)) #,typ='invisible'))
+  if not x:
+    print "Couldn't get in the room"
+    return -3
+  id=cl.send( xmpp.protocol.Message(room, text,'groupchat') )
+  if debug:
+    print 'sent message with id',id
+  # time.sleep(1)
+  cl.disconnect()
+  return 0
+
+
+
+if __name__ == "__main__":
+  main()

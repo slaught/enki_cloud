@@ -1,0 +1,12 @@
+<% set_html_title "#{@machine.model_no} (Edit)", "Machines" %>
+<h1>Edit Machine</h1>
+
+
+<% form_for(:machine, @machine , :url => {:action => 'update', :id => @machine}) do |f| %>
+
+<%= render :partial => 'edit', :locals => {:f => f } %> 
+
+  <p> <%= f.submit "Update" %> </p>
+<% end %>
+
+<%= link_to 'Back', :action => 'list' %>

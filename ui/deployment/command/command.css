@@ -1,0 +1,241 @@
+/**
+ * Page wide styles
+ */
+body {
+	margin:0;
+	padding:0;
+	font-family: verdana;
+	background: white; 
+	color: black;
+	overflow: hidden;
+}
+
+/**
+ * Search bar at the top of the command page
+ */
+#search {
+	border-bottom: 2px solid black;
+	background: #CCCCCC;
+}
+	input.search {
+		width: 300px;
+		height: 24px;
+		border: 1px solid #111111;	
+		padding: 3px;
+		color: black;
+	}
+	#search input.default {
+		color: #AAAAAA;
+	}
+	
+	input.refresh_period {
+		width: 40px;
+		height: 24px;
+		border-left: 1px solid #111111;
+		border-top: 1px solid #111111;
+		border-right: 1px solid #111111;		
+		border-bottom: 1px solid #111111;	
+		padding: 3px;
+	}
+	#help {
+		border-bottom: solid 1px black;
+		
+	}
+	#help h3 {
+		margin: 0 0 0 10px;
+		padding-top: 10px;
+	}
+	#help ul {
+		margin: 0 0 0 10px;
+		padding: 10px;
+	}
+	.help_button {
+		cursor: pointer;
+		height: 20px;
+		padding-top: 4px;
+		width: 10px;
+		display: inline-block;
+		font-size: 0.8em;
+		position: relative;
+		top: -6px;
+		left: -4px;
+	}
+	
+	.show_all,
+	.down_clusters_filter,
+	.down_nodes_filter {
+		width: 130px;
+		height: 32px;
+	}
+	#loadBalancers  {
+		display: inline-block;
+	}
+	.loadbalancer {
+
+		border: solid 1px white;
+		color: white;
+		background-color: black;
+	}
+
+	.loadbalancer.lame {
+		border: solid 1px green;
+		color: black;
+		background-color: yellow;
+	}
+	#loadBalancerDetails {
+		border-bottom: solid 1px black;
+	}
+	#loadBalancerDetails h3 {
+		margin: 0;
+		padding: 0;
+		padding-left: 10px;
+		padding-top: 5px;
+		border-bottom: 2px solid #000000;		
+	}	
+	#loadBalancerDetails .load_balancer {
+		height: 20px;
+		padding-left: 20px;
+		padding-top: 5px;
+		border-bottom: 1px solid #999999;
+	}
+	#loadBalancerDetails .up {
+		background-color: #79E851;
+	}
+	#loadBalancerDetails .down {
+		background-color: red;
+	}		
+	#loadBalancerDetails .offline {
+		background-color: gray;
+	}						
+		
+	
+/**
+ * Cluster information table in an expanded cluster
+ */
+.details table {
+ 	font-size: 1em;
+	width: 100%;
+	border:0px; 
+	border-collapse: collapse;
+	background-color: white;
+}
+.details td { 
+	padding: 3px;
+	text-align: center; 
+	vertical-align:middle; 
+}
+.details table td {
+	border-width: 1px;
+	padding: 7px;
+	border-style: solid;
+}
+.details tr.service_totals {
+	background: white;
+}
+.details tr.config {   
+	background: white;
+	cursor: pointer;
+} 
+.details tr.thr { 
+	font-family: monospace; background: white;  
+}
+.details tr.nodata {  background: #AAAAAA; color: black; }
+.details tr.downpage {  background: blue ; color: white; }
+.details tr.nodownpage {  display: none; } 
+.details td.service_title {
+ 	font-size: 1em;
+	font-weight: bold;
+}
+.details td.datacenter {
+	font-size:large;
+	font-weight: bold;
+}
+.details div.status > a { color: black; }
+.details .node-downpage { background: blue ; color: white; }
+.details td.w20 { width: 20px;}
+.details td.w40 { width: 40px;}
+.details td.w50 { width: 50px;}
+.details td.w { width: 45px;}
+.details td.w75 { width: 75px;}
+.details td.s { width: 75px;}
+.details td.w120 { width: 120px;}
+.details td.n { width: 120px; white-space: nowrap;}
+.details td.w200 { width: 200px;}
+.details td.w110 { width: 110px;}
+
+.details .node .menu {
+	vertical-align: bottom;
+	cursor: pointer;
+}
+.node_link {
+	margin-bottom: 10px;
+}
+
+/**
+ * Cluster title bar
+ */
+#clusters {
+	overflow:auto;
+	position: relative;
+}
+	h3.clusters_title,
+	h3.portfwds_title {
+		margin: 0;
+		padding: 0;
+		padding-left: 10px;
+		padding-top: 5px;
+		border-bottom: 2px solid #000000;
+	}
+	.cluster {
+		padding: 3px;
+		border-bottom: 1px solid #999999;
+	}
+	.cluster h3.cluster_name {
+		font-size: small;
+		margin: 0;
+		padding:0;
+		cursor: pointer;
+	}
+	.cluster .node_icons {
+		float: right;
+		text-align: right;
+		padding-right: 20px;
+		margin: 0;
+		padding: 0;
+	}
+	.node_icon a {
+		text-decoration: none;
+		padding-right: 10px;
+		margin-right: 2px;	
+	}
+	.up_node {
+		/*background-image: url("../css/images/green_led.png");*/
+		border: 1px solid black;
+		background-color: green;
+			
+	}
+	.down_node {
+		/*background-image: url("../css/images/red_led.png");*/
+		border: 1px solid black;
+		background-color: red;	
+	}
+	.offline_node {
+		/*background-image: url("../css/images/grey_led.png");*/
+		border: 1px solid black;
+		background-color: gray;
+	}
+	.cluster .expand {
+		display: inline-block;
+	    cursor: pointer;
+	}
+
+/*
+* jQuery UI CSS Framework
+* Copyright (c) 2009 AUTHORS.txt (http://jqueryui.com/about)
+* Dual licensed under the MIT (MIT-LICENSE.txt) and GPL (GPL-LICENSE.txt) licenses.
+*/
+.ui-icon { text-indent: -99999px; overflow: hidden; background-repeat: no-repeat; }
+.ui-icon { width: 16px; height: 16px; background-image: url(../css/ui-lightness/images/ui-icons_222222_256x240.png); }
+.ui-icon-triangle-1-e { background-position: -32px -16px; }
+.ui-icon-triangle-1-s { background-position: -64px -16px; }
+ */

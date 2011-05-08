@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# Michael Vallaly (Mar '10) Ver 2.5
+
+# This script updates/increments the bind zone file serial number
+
+SED_BIN="/bin/sed"
+AWK_BIN="/usr/bin/awk"
+DATE_BIN="/bin/date"
+BC_BIN="/usr/bin/bc"
+GREP_BIN="/bin/grep"
+
+ZONE_DIR="/var/chroot/bind9/var/cache/bind"	# Directory that contains the running zone files
+BASE_ZONE_DIR="/data/dns-zones"			# Directory that contains the generated zone files	
+
+###########################################################################################
+
+# Get the serial number from a bind zonefile
+get_serial () {
+
+  local target=$1
+
+  # Grab the SOA DNS Zone Header
+  SOA_HEADER=`cat $target |$SED_BIN 's/;.*$//' |$AWK_BIN '/^[A-Za-z0-9\-\.]*[\t \.\@]+IN[\t ]+SOA[\t ]+[A-Za-z0-9\-\. \t]+\(/,/\)/' |tr -d '\n' |awk '{print $7}'`
+
+  # Get the currently set serial number
+  echo "$SOA_HEADER" |tr -t '[:lower:]' '[:upper:]' |$GREP_BIN -E -e '[[:digit:]]{10}' -e '%SERIAL%'
+
+}
+
+# Check for required binaries
+for req_bin in $AWK_BIN $SED_BIN $DATE_BIN $BC_BIN $GREP_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Check the destination is writeable
+if [ ! -w $ZONE_DIR ]; then
+  echo "Can't write to $ZONE_DIR directory! Exiting.."
+  exit 1
+fi
+
+# Check for needed commandline arguments
+usage="$0 <base_zonefile_name>"
+if [ $# -le 0 ]; then
+  echo "$usage" 
+  exit 1
+else
+  FILE=`echo $1 |tr -s '/' |$SED_BIN -e "s|^${BASE_ZONE_DIR}/||g"`
+fi
+
+# Check that the zonefile exists
+if [ ! -e ${BASE_ZONE_DIR}/${FILE} ] && [ ! -e ${ZONE_DIR}/${FILE} ]; then
+  echo "Error cannot open zone file (${FILE})! Exiting.."
+  exit 1  
+fi
+
+# Generate todays base serial number
+DATE_NOW=`$DATE_BIN +%Y%m%d`
+
+# Generate the replacement serial
+REPLACE_SERIAL=`get_serial ${BASE_ZONE_DIR}/${FILE}`
+
+# Check if we have a currently deployed file for this zone, if so use it for serial calculations
+if [ -e "${ZONE_DIR}/${FILE}" ]; then
+  OLD_SERIAL=`get_serial ${ZONE_DIR}/${FILE}`
+else
+  OLD_SERIAL=$REPLACE_SERIAL
+fi
+
+# Check that we got something back for a serial
+if [ "${OLD_SERIAL}x" == "x" ]; then
+  echo "Cannot find zone file (${FILE}) serial number.. Exiting!"
+  exit 1
+fi
+
+# We have a new or regenerated file from source control
+if [ "$OLD_SERIAL" == "%SERIAL%" ]; then
+  NEW_SERIAL="${DATE_NOW}01"
+
+# If we have a serial number process it
+elif [ $OLD_SERIAL -eq $OLD_SERIAL 2> /dev/null ]; then
+
+  # Split up the serial
+  OLD_DATE=`echo $OLD_SERIAL |cut -c 1-8`
+  OLD_REV=`echo $OLD_SERIAL |cut -c 9-10`
+
+  if [ "${OLD_REV}x" == "x" ]; then
+    OLD_REV=01
+  fi
+
+  # If the current date number is greater just use it
+  if [ "$(echo "$DATE_NOW > $OLD_DATE" |$BC_BIN)" -eq "1" ]; then
+    NEW_SERIAL="${DATE_NOW}01"
+
+  # If we have the same date number increment the revsion number
+  elif [ "$(echo "$DATE_NOW == $OLD_DATE" |$BC_BIN)" -eq "1" ] ; then
+
+    # Increment the revision number
+    if [ "$(echo "$OLD_REV <= 98" |$BC_BIN)" -eq "1" ]; then    
+      NEW_REV=`printf "%02d\n" "$(echo "$OLD_REV + 1" |$BC_BIN)"`
+      NEW_SERIAL="${DATE_NOW}${NEW_REV}"
+    else
+      echo "Too many revision for today wait till tomorrow.. Exiting!"
+      exit 1
+    fi
+
+  else
+    echo "Current zonefile serial is in the future.. Time Skew? Exiting!"
+    exit 1
+  fi
+
+# Not a serial number
+else
+  echo "Invalid serial number.. Exiting!"
+  exit 1
+fi
+
+# DEBUG
+#echo "DEBUG: $NEW_SERIAL"
+
+# Replace the serial # and install the new zonefile
+$SED_BIN -e "s-${REPLACE_SERIAL}-${NEW_SERIAL}-" ${BASE_ZONE_DIR}/${FILE} > ${ZONE_DIR}/${FILE}.tmp
+replace_status=$?
+
+# Exit correctly
+if [ $replace_status -eq 0 ]; then
+  mv ${ZONE_DIR}/${FILE}.tmp ${ZONE_DIR}/${FILE}
+  exit 0
+else
+  echo "Replacement of zone (${FILE}) serial number failed... Exiting!"
+  rm ${ZONE_DIR}/${FILE}.tmp
+  exit 1
+fi

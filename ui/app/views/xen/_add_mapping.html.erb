@@ -1,0 +1,10 @@
+<div>
+  <%= render :partial => 'shared/partial_flashes' %>
+  <% form_remote_tag(:html => {:action => {:action => "add_new_mapping",
+          :host_id => @host.id}},
+        :url => url_for({ :action => "add_new_mapping", :host_id => @host.id})) do %>
+    <%= collection_select(:xen_mapping, :guest_id, potential_guests,
+      :node_id, :fn_prefix ) %>
+    <%= submit_tag "Add Mapping" %>
+  <% end %>
+</div>

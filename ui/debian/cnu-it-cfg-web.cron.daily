@@ -1,0 +1,5 @@
+#!/bin/bash
+
+/export/web/cnu_it/bin/collect_all_xen.rb obr | /export/web/cnu_it/bin/xen_map.rb
+/export/web/cnu_it/bin/collect_all_xen.rb nut | /export/web/cnu_it/bin/xen_map.rb
+/export/web/cnu_it/bin/collect_all_xen.rb nav | /export/web/cnu_it/bin/xen_map.rb

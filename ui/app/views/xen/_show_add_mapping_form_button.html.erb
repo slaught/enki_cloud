@@ -1,0 +1,7 @@
+<% form_remote_tag(:html => {:id=>"#{host.to_label}_toggle_add_mapping_form_button",
+          :style => 'display: inline;',
+          :title => 'Map a guest to this host',
+          :action => { :action => "show_add_mapping_form", :host_id => host.id}},
+        :url => url_for({ :action => "show_add_mapping_form",:host_id => host.id})) do %>
+  <%= image_submit_tag "/images/silk/add.png", :alt => 'Map a guest to this host' %>
+<% end %>

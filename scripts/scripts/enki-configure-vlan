@@ -1,0 +1,91 @@
+#!/bin/bash
+
+# Michael Vallaly (Dec 15th '09)
+
+# Automaticly Adds/Removes VLAN interfaces based on /etc/network/interfaces
+
+INTERFACE_FILE="/etc/network/interfaces"
+INTERFACE_FILTER="vlan"
+
+DIFF_BIN="/usr/bin/diff"
+GREP_BIN="/bin/grep"
+IFUP_BIN="/sbin/ifup"
+IP_BIN="/bin/ip"
+SED_BIN="/bin/sed"
+SORT_BIN="/usr/bin/sort"
+VCONFIG_BIN="/sbin/vconfig"
+UNIQ_BIN="/usr/bin/uniq"
+
+CRITICAL_VLANS="vlan500 vlan501 vlan4000"    # VLANs we refuse to touch
+
+###############################################################################
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to modify network interfaces!"
+  exit 1
+fi
+
+# Check for required binaries
+for req_bin in $DIFF_BIN $GREP_BIN $IFUP_BIN $IP_BIN $SORT_BIN $VCONFIG_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Grab configured VLANS
+CONFIGURED_VLANS=`$GREP_BIN -e "^[[:space:]]\{0,\}iface ${INTERFACE_FILTER}[[:digit:]]\{1,\} inet " $INTERFACE_FILE |awk '{print $2}' |$SORT_BIN -rn |$UNIQ_BIN`
+
+# Grab the enabled VLANS
+ENABLED_VLANS=`$GREP_BIN -e "^auto " $INTERFACE_FILE  |tr -s -t ' ' '\n' |$GREP_BIN -e "^${INTERFACE_FILTER}[[:digit:]]\{1,\}$" |$SORT_BIN -rn |$UNIQ_BIN`
+
+# Generate the valid VLANS
+VALID_VLANS=`echo -e "${CONFIGURED_VLANS}\n${ENABLED_VLANS}" |$SORT_BIN -rn |$UNIQ_BIN -d`
+
+# Grab the running VLANS
+RUNNING_VLANS=`ls -1 /proc/net/vlan/ 2>/dev/null |$GREP_BIN -e "^${INTERFACE_FILTER}[[:digit:]]\{1,\}$" |$SORT_BIN -rn |$UNIQ_BIN`
+
+# Generate the VLAN differences
+DIFF_OUTPUT=`$DIFF_BIN --suppress-common-lines <(echo "${VALID_VLANS}") <(echo "${RUNNING_VLANS}") |$GREP_BIN -e "^[<>] ${INTERFACE_FILTER}"`
+
+# Remove vlans which are running but don't exist in configuration 
+for old_iface in `echo "$DIFF_OUTPUT" |$GREP_BIN -e "^> ${INTERFACE_FILTER}" |cut -d ' ' -f2`; do
+
+  # Sanity check the vlan removal against critical vlans
+  for invalid_iface in $CRITICAL_VLANS; do 
+    if [ "${old_iface}" == "${invalid_iface}" ]; then 
+      echo "Refusing to remove critical interface ${old_iface}! Manual removal is required.. Skipping. "
+      continue 2
+    fi
+  done
+
+  echo -n "Removing interface ${old_iface} from running configuration.. "
+
+  # Flush the interface 
+  $IP_BIN addr flush dev ${old_iface}
+
+  # Set offline
+  $IP_BIN link set ${old_iface} down
+
+  # Remove vlan
+  $VCONFIG_BIN rem ${old_iface} > /dev/null
+
+  # Update the interface state file
+  $SED_BIN -i "/^${old_iface}=${old_iface}$/d" /etc/network/run/ifstate 2> /dev/null
+
+  echo "Done."
+
+done
+
+# Enable new vlans aren't running but exist in configuration
+for new_iface in `echo "$DIFF_OUTPUT" |$GREP_BIN -e "^< ${INTERFACE_FILTER}" |cut -d ' ' -f2`; do
+
+  echo -n "Enabling interface ${new_iface} in running configuration.. "
+
+  # Enable the new vlan
+  $IFUP_BIN ${new_iface} > /dev/null
+
+  echo "Done."
+
+done

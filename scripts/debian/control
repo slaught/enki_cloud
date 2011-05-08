@@ -1,0 +1,50 @@
+Source: enki-scripts
+Section: admin
+Priority: extra
+Maintainer: chad slaughter <.com>
+Build-Depends: cdbs, debhelper (>= 5), sed, make, dpkg-dev, fakeroot, findutils, awk, devscripts, build-essential 
+Standards-Version: 3.7.2
+
+Package: enki-scripts
+Section: admin
+Architecture: all
+Depends: dpkg, dsh, sudo, procps, ipcalc, bc, coreutils, iproute, ethtool, iptables, grep, bash (>= 3.2 )
+Suggests: nginx-perl-enki-status 
+Description: scripts for managing the ENKI platform
+
+Package: enki-scripts-loadbalancers
+Section: admin
+Architecture: all
+Depends: enki-scripts (>= 1.5)
+Description: ENKI Load balancers 
+
+Package: enki-scripts-node
+Section: admin
+Architecture: all
+Depends: enki-scripts (>= 1.5), nginx-perl-enki-status (>= 1.6)
+Description: ENKI Node scripts 
+
+Package: enki-xmppsend
+Section: admin
+Architecture: all
+Depends: python, python-xmpp
+Description: xmpp-send script to send message to jabber
+
+Package: enki-scripts-xen
+Section: admin
+Architecture: all
+Depends: enki-scripts-node (>=1.5)
+Description: ENKI Xen DomU startup Node scripts 
+
+Package: enki-scripts-xen-dom0
+Section: admin
+Architecture: all
+Depends: enki-scripts-xen (>=1.5)
+Description: ENKI Xen Dom0 scripts
+
+Package: enki-dns-deployment
+Section: admin
+Architecture: all
+Depends: enki-scripts (>= 1.5), findutils, rsync, bind9utils
+Description:  DNS Scripts for deploying changes to ENKI DNS master
+

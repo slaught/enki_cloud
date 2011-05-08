@@ -1,0 +1,56 @@
+<% set_html_title "Nodes" %>
+<div id="node_data">
+<h1>Nodes</h1>
+<div>
+<ul>
+<% if permitted_to? :create, :node %>
+<li><%= link_to "Create New Node", :action => "new" %></li>
+<%end %>
+<li>
+<span class="search">
+<%= text_field_tag 'search_box', nil,  :class => "search_box",  :onKeyPress=>"search_keypress(event);" %>
+<%= button_to_function "Search", 'transferUser()'%> 
+</span>
+</li>
+<!--
+<li>
+<%# render :partial => 'node/node_toc' %>
+</li>
+-->
+</ul> 
+</div> 
+<table class="sortable">
+  <tr class="thead">
+    <th>Hostname</th>
+    <th>Model</th>
+    <th>Node Type</th>
+    <th>Location</th>
+    <th class="sorttable_numeric">Management IP Address</th>
+  </tr>
+<% @nodes.each do |entry|  %>
+  <tr>
+    <td><%= link_to_node(entry) %></td>
+    <td>
+      <% if entry.model_id? %>
+      <%= link_to_machine(entry.model) %>
+      <% elsif entry.node_type.is_virtual? %>
+      <em>Default</em>
+      <% end %>
+    </td>
+    <td><%= entry.node_type.node_type %></td>
+    <td><%= entry.datacenter.name %></td>
+    <td sorttable_customkey="<%= sorttable_ip(entry.mgmt_ip_address) %>"><%= entry.mgmt_ip_address %></td>
+<% permitted_to? :edit, :node do %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"), {:action => "edit", :id => entry}, {:title => "Edit"}  if permitted_to? :edit, :node %></td>
+<% end %>
+  </tr>
+<% end %>
+</table>
+<br/>
+<div class="flickr_pagination">
+  <% "flickr_pagination" +"apple_pagination" %>
+  <%= will_paginate @nodes %>
+  <div class="page_info">(<%= @nodes.total_entries %> nodes)</div>
+</div>
+</div>
+<%= link_to "Create New Node", :action => "new" if permitted_to? :create, :node  %>

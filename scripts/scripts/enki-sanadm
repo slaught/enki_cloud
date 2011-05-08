@@ -1,0 +1,642 @@
+#!/bin/bash
+
+# ENKI SAN Client Administration Script 
+
+# Michael Vallaly (Nov '10) Ver 2.5
+
+# Configuration Files
+PATH_CONFIG_FILE="/etc/enki/configs/node/san.paths"
+
+# Application Dependencies
+AWK_BIN="/usr/bin/awk"
+DMSETUP_BIN="/sbin/dmsetup"
+ISCSIADM_BIN="/usr/bin/iscsiadm"
+FILE_BIN="/usr/bin/file"
+FIND_BIN="/usr/bin/find"
+FOLD_BIN="/usr/bin/fold"
+FSCK_BIN="/sbin/fsck"
+FUSER_BIN="/bin/fuser"
+SORT_BIN="/usr/bin/sort"
+GREP_BIN="/bin/grep"
+MOUNT_BIN="/bin/mount"
+MULTIPATH_BIN="/sbin/multipath"
+SAN_DEV_NAME_BIN="/etc/enki/scripts/3par-persistent-name"
+SED_BIN="/bin/sed"
+SG_LUNS_BIN="/usr/bin/sg_luns"
+TUNE2FS_BIN="/sbin/tune2fs"
+UDEVADM_BIN="/sbin/udevadm"
+UMOUNT_BIN="/bin/umount"
+XARGS_BIN="/usr/bin/xargs"
+
+# Configuration Paths
+SAN_DEVICE_PATH="/dev/iscsi-targets"
+SAN_MOUNT_PATH="/san"
+SCSI_PATH="/sys/class/scsi_host"
+
+# Configuration Options
+MOUNT_OPTS="-o data=journal,noatime"	# [ordered,atime]
+BLOCK_TIMEOUT="60"              	# [30 Seconds]
+BLOCK_QUEUE_DEPTH="32"          	# [128]
+BLOCK_READAHEAD="128"           	# [128 kB]
+BLOCK_MAX_SECTORS="512"         	# [512 kB] 
+BLOCK_IO_SCHED="noop"           	# noop anticipatory deadline [cfq]
+
+#############################################################################################################################
+
+#TODO Handle multiple filesystems / mount options
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to modify SAN configuration!" >&2
+  exit 1
+fi
+
+# Check for script dependencies
+for bindep in $AWK_BIN $DMSETUP_BIN $ISCSIADM_BIN $FILE_BIN $FIND_BIN $FOLD_BIN $FSCK_BIN $FUSER_BIN $GREP_BIN $MOUNT_BIN $MULTIPATH_BIN $SAN_DEV_NAME_BIN $SED_BIN $SG_LUNS_BIN $SORT_BIN $TUNE2FS_BIN $UDEVADM_BIN $UMOUNT_BIN $XARGS_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!" >&2
+    exit 1
+  fi
+done
+
+# Check sg3-utils version 1.29+ (must support BSG 2.6.28+ kernel) 
+SG_MIN_VERSION="20100312"
+SG_LUNS_VERSION=`$SG_LUNS_BIN -V 2>&1 |cut -s -d ' ' -f3`
+if [ "${SG_LUNS_VERSION}x" == "x" ] || [ ${SG_LUNS_VERSION} -lt ${SG_MIN_VERSION} ]; then
+  echo "This script requires $SG_LUNS_BIN version (>= ${SG_MIN_VERSION}) while (${SG_LUNS_VERSION}) is currently installed.. Please upgrade sg3-utils (>= 1.29).. Aborting!" >&2
+  exit 1
+fi
+
+unlink_mpath_device() {
+
+  local krl_dev=${1}
+  local mpath_name
+  local mpath_state
+
+  for line in `$DMSETUP_BIN info -c --separator ',' --noheadings -o name,open,devnos_used,device_count |$GREP_BIN -e ",${krl_dev},"`; do
+
+    mpath_name=`echo $line |cut -d ',' -f1`
+    mpath_state=`echo $line |cut -d ',' -f2`
+   
+    if [ "${mpath_state}" != "0" ]; then
+     $DMSETUP_BIN message ${mpath_name} 0 fail_if_no_path &> /dev/null
+     sleep 1
+     $DMSETUP_BIN message ${mpath_name} 0 fail_if_no_path &> /dev/null
+     ## echo "$DMSETUP_BIN remove --force ${mpath_name}" # 2>/dev/null
+    fi
+
+    # Destroy the mpath device
+    $MULTIPATH_BIN -f ${mpath_name} &> /dev/null
+
+  done
+
+}
+
+list_san_volumes() {
+ 
+  echo "The following volumes are available on this host:"
+  $FIND_BIN -L ${SAN_DEVICE_PATH}/* ! -type l -exec basename {} \; 2> /dev/null 
+
+}
+
+configure_block_device() {
+
+  local block_dev
+  local block_devs=${1}
+  local dep_block_dev
+  local dep_block_devs=""
+
+
+  if [ "${block_devs}x" == "x" ]; then
+    block_devs=`$ISCSIADM_BIN -m session -P3 2>/dev/null |$GREP_BIN -e "^[[:space:]]\{1,\}Attached scsi disk [[:alpha:]]\{3,\}[[:space:]]\{1,\}State: running$" |$AWK_BIN '{print $4}'`
+  fi
+
+  # Set the block device settings
+  for block_dev in $block_devs; do
+
+    if [ ! -d /sys/block/${block_dev}/queue ]; then
+      [ $VERBOSE ] && echo "Error: Can't find the block device (${block_dev}) to set configuration!"
+    else 
+
+      echo "$BLOCK_TIMEOUT" > /sys/block/${block_dev}/device/timeout 		# Set the device timeout
+      echo "$BLOCK_QUEUE_DEPTH" > /sys/block/${block_dev}/queue/nr_requests 	# Set the device queue depth
+      echo "$BLOCK_READAHEAD" > /sys/block/${block_dev}/queue/read_ahead_kb 	# Set the device read-ahead
+      echo "$BLOCK_MAX_SECTORS" > /sys/block/${block_dev}/queue/max_sectors_kb 	# Set the device maximum hardware sector size
+      echo "$BLOCK_IO_SCHED" > /sys/block/${block_dev}/queue/scheduler 		# Set the device scheduler
+
+    fi
+  
+    # Generate a list of dependent block devices 
+    dep_block_devs+="`ls -1 /sys/block/${block_dev}/holders/ 2>/dev/null` "
+
+  done
+
+  # Set the dependent block device settings
+  for dep_block_dev in `echo "${dep_block_devs}" |tr -t ' ' '\n' |$SORT_BIN -u`; do
+    echo "$BLOCK_IO_SCHED" > /sys/block/${dep_block_dev}/queue/scheduler 	# Set the device scheduler
+  done
+
+
+}
+
+rescan_iscsi() {
+
+  local device_added=0
+  local hostnum
+  local krnl_dev
+  local sys_dev
+  local scsi_dev
+  local session
+  local scsi_valid_luns
+  local scsi_running_luns
+  
+  # Loop over all the scsi host bus adaptors
+  for scsi_host in ${SCSI_PATH}/host*; do
+
+    # We only care about SAN HBAs 
+    if [ "`cat ${scsi_host}/proc_name 2> /dev/null`" != "iscsi_tcp" ]; then
+      continue
+    fi 
+    
+    # Get the host adaptor number and scsi session
+    hostnum=${scsi_host#${SCSI_PATH}/host}
+    session=`basename $(ls -1d ${scsi_host}/device/session* 2>/dev/null)`
+
+    [ $VERBOSE ] && echo -n "Processing san host controller (${hostnum})... " 
+
+    # Get the scsi device name (kernel)
+    sys_dev=""
+    
+    # Kernel 2.6.36+
+    sys_dev=`ls -1d ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:*/bsg:* 2>/dev/null |$AWK_BIN -F '/bsg:' '{print $2}' |tail -1`
+    # Kernel 2.6.30+
+    if [ "${sys_dev}x" == "x" ]; then
+      sys_dev=`ls -1d ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:*/bsg/* 2>/dev/null |$AWK_BIN -F '/bsg/' '{print $2}' |tail -1`
+    elif [ "${sys_dev}x" == "x" ]; then
+      [ $VERBOSE ] && echo "Done."
+      continue
+    fi
+
+    # Generate lists of valid, active and all SCSI LUNs
+    scsi_valid_luns=`$SG_LUNS_BIN /dev/bsg/${sys_dev} -d |$GREP_BIN -e "Peripheral device addressing" |cut -d= -f2`
+    scsi_running_luns=`ls -1d ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:* 2>/dev/null |cut -d/ -f9 |cut -d: -f4`
+    all_luns=`echo "$scsi_valid_luns $scsi_running_luns" |$SORT_BIN -u`
+ 
+    [ $VERBOSE ] && echo -n "Valid LUNs are ("$scsi_valid_luns") "
+ 
+    # Loop over all LUNs
+    for lun in $all_luns; do
+
+      # Get the block dev major/minor for the lun
+      # Kernel 2.6.36+
+      krnl_dev=`cat ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:${lun}/block:*/dev 2>/dev/null`
+      # Kernel 2.6.30+
+      if [ "${krnl_dev}x" == "x" ]; then
+        krnl_dev=`cat ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:${lun}/block/*/dev 2>/dev/null`
+      fi
+
+      # If the LUN is not valid remove it
+      if [ `echo "$scsi_valid_luns" |$GREP_BIN -ce "^${lun}$"` -eq 0 ]; then
+	[ $VERBOSE ] && echo -ne "\n Removing LUN (${lun}) "
+        # Check if this is a dependency of a running mpath and remove it
+        if [ "${krnl_dev}x" != "x" ]; then
+          unlink_mpath_device ${krnl_dev}
+        fi
+         
+        # Remove the LUN
+        echo 1 > /sys/class/scsi_device/${hostnum}:0:0:${lun}/device/delete
+
+      # If the LUN doesn't already exist then add it
+      elif [ ! -d ${scsi_host}/device/${session}/target${hostnum}:0:0/${hostnum}:0:0:${lun} ]; then
+	[ $VERBOSE ] && echo -ne "\n Adding LUN (${lun}) "
+
+	# Add the LUN
+	echo "0 0 ${lun}" > /sys/bus/scsi/devices/host${hostnum}/scsi_host/host${hostnum}/scan
+        device_added=1
+
+      else
+      # Nothing to do
+        continue
+      fi
+
+    done
+
+  [ $VERBOSE ] && echo "Done."
+
+  done
+
+  # If we made changes wait for the block devices to settle
+  if [ $device_added -ne 0 ]; then
+    [ $VERBOSE ] && echo -n "Waiting for block devices to settle... "
+    $UDEVADM_BIN settle
+    [ $VERBOSE ] && echo "Done."
+  fi
+
+  return 0
+
+}
+
+iscsi_login () {
+
+  local configfile=$1
+  local cmd_output
+  local ip
+  local iface
+  local running_paths
+
+
+  # Load our SAN path pair configuration file 
+  if [ ! -e $configfile ] || [ ! -r $configfile ]; then
+    echo "Error: Cannot read iscsi path configuration file (${configfile})!" >&2
+    return 1
+  else
+    . $configfile
+  fi 
+
+  # Grab the currently running iscsi sessions
+  running_paths=`$ISCSIADM_BIN -m session -P1 2>/dev/null |$GREP_BIN -e "Current Portal:" -e "Iface Name:" -e "SID:" |cut -d: -f2 |$AWK_BIN '{printf("%s%s", $0, (NR%3 ? ":" : "\n"))}' |tr -d ' '`
+
+  # Loop over our path pairs
+  for pathpair in ${ISCSI_PATHS[*]}; do
+
+    iface=`echo $pathpair |cut -s -d: -f1`
+    ip=`echo $pathpair |cut -s -d: -f2`
+
+    # Check for already established sessions.
+    if [ `echo "$running_paths" |$GREP_BIN -ce "^${ip}:${iface}"` -eq 0 ]; then
+
+      # Setup our interface
+      [ $VERBOSE ] && echo -n "Creating interface ${iface}... " >&2
+      $ISCSIADM_BIN -m iface -I ${iface} -o new -n iface.transport_name -v tcp &>/dev/null
+      $ISCSIADM_BIN -m iface -I ${iface} -o update -n iface.net_ifacename -v ${iface} &>/dev/null
+
+      # Do our discovery to the target address
+      [ $VERBOSE ] && echo -ne "Done.\n Logging into SAN via interface ${iface}... " >&2
+      cmd_output=`$ISCSIADM_BIN -m discovery -tst -p ${ip} -I ${iface}`
+      if [ $? -ne 0 -o x = "x${cmd_output}" ]; then
+        [ x != "x${cmd_output}" ] && echo "${cmd_output}"
+        [ $VERBOSE ] && echo " Error: iSCSI Discovery failed! Aborting.." >&2
+        return 1
+      fi
+
+      # Do our login to the available targets
+      cmd_output=`$ISCSIADM_BIN -m discovery -p ${ip} -I ${iface} -l`
+      if [ $? -ne 0 -o x = "x${cmd_output}" ]; then
+        [ x != "x${cmd_output}" ] && echo "${cmd_output}"
+        [ $VERBOSE ] && echo " Error: iSCSI Login failed! Aborting.." >&2
+        return 1
+      fi
+
+    else 
+      # Just skip it 
+      [ $VERBOSE ] && echo -e " Warning: SAN path ${iface} to ${ip} already running.. Skipping login!" >&2
+      continue
+    fi
+
+    [ $VERBOSE ] && echo "Done." >&2
+
+  done
+
+return 0
+
+}
+
+iscsi_checkpath () {
+
+  local iscsisessions=${1}
+  local num
+  local iscsi_session
+  local iscsi_host
+  local iqn
+  local tpgt
+  local state
+  local iface
+  local init_ip
+  local tgt_ip
+  local devices
+  local dependent_devices
+
+  # 
+  if [ "${iscsisessions}x" == "x" ]; then
+    iscsisessions=`$ISCSIADM_BIN -m session 2>/dev/null |cut -d '[' -f2 |cut -d ']' -f1`
+  fi
+
+  for num in ${iscsisessions}; do 
+
+   devices=""
+   dependent_devices=""
+ 
+   iscsi_session="/sys/class/iscsi_session/session${num}" 
+     if [ ! -d ${iscsi_session} ]; then
+       [ $VERBOSE ] && echo " Invalid session number passed.. Skipping checkpath!" >&2
+       continue
+     fi
+
+     iscsi_host="/sys/class/iscsi_host/`readlink ${iscsi_session}/device |cut -d'/' -f6`"
+
+     iqn=`cat ${iscsi_host}/device/session*/iscsi_session\:session*/targetname`
+     tpgt=`cat ${iscsi_host}/device/session*/iscsi_session\:session*/tpgt`
+     state=`cat ${iscsi_host}/device/session*/iscsi_session\:session*/state`
+     iface=`cat ${iscsi_host}/netdev`
+     init_ip=`cat ${iscsi_host}/ipaddress`
+     tgt_ip=`cat ${iscsi_host}/device/session*/connection*/iscsi_connection:connection*/persistent_address`
+     
+     for block_dev in ${iscsi_host}/device/session*/target*:0:0/*/block:*; do 
+       devices+="`readlink -e $block_dev |cut -d '/' -f4` "
+     done
+
+     for block_dev in $devices; do
+       dependent_devices+="`ls -1 /sys/block/${block_dev}/holders/ 2>/dev/null |tr -t '\n' ' '`"
+     done
+
+     echo "Connection Mapping: ${iface}:${init_ip} -> ${tpgt}:${tgt_ip} - ${state}"
+     [ $VERBOSE ] && echo "  Block Devices: $devices"
+     [ $VERBOSE ] && echo "  Dependent Block Devices: $dependent_devices"
+
+  done
+
+}
+
+iscsi_logout () {
+
+  local devices=""
+  local dependent_devices=""
+  local output
+  local id
+  local iscsisessions=${1}
+  local iface
+
+  if [ "${iscsisessions}x" == "x" ]; then
+    iscsisessions=`$ISCSIADM_BIN -m session 2>/dev/null |cut -d '[' -f2 |cut -d ']' -f1`
+  fi
+
+  for id in ${iscsisessions}; do
+
+    devices=""
+    dependent_devices=""
+
+    #if [ ! -d /sys/devices/platform/host${id} ]; then
+    #  [ $VERBOSE ] && echo "Can't find iscsi session!"
+    #fi
+
+    for block_dev in /sys/devices/platform/host${id}/session*/target*:0:0/*/block:*; do
+      devices+="`readlink -e $block_dev |cut -d '/' -f4` "
+    done
+
+    for block_dev in $devices; do
+      dependent_devices+="`ls -1 /sys/block/${block_dev}/holders/ 2>/dev/null |tr -t '\n' ' '`"
+    done
+
+    if [ "${dependent_devices}x" != "x" ]; then 
+      echo "Error the following block devices are dependent on this session (${id}):"
+      echo "  ${dependent_devices}"
+      echo "  Please remove theses dependencies manually before attempting to logout the session!"
+      continue
+
+    fi
+
+    # Get the interface
+    iface=`$ISCSIADM_BIN -m session -r ${id} -P3 |$GREP_BIN -e "Iface Name: " |$AWK_BIN '{print $3}' 2>/dev/null`
+
+    # Handle each individual session
+    [ $VERBOSE ] && echo -n "Logging out of iscsi interface ${iface}... " >&2
+    output=`$ISCSIADM_BIN -m session -r ${id} -u 2>&1`
+    if [ $? -ne 0 -o x = "x$output" ]; then
+       [ x != "x$output" ] && echo "$output"
+       return 1
+    fi
+
+    # Remove the interface
+    [ $VERBOSE ] && echo -ne "Done.\n Removing interface ${iface}... " >&2
+    $ISCSIADM_BIN -m iface -I ${iface} -o delete &>/dev/null
+    [ $VERBOSE ] && echo "Done." >&2
+
+  done
+
+  return 0
+
+}
+
+create_persistent_names () {
+
+local dmdev=${1}
+local device
+local volumename
+
+  # Run the Multipather
+  $MULTIPATH_BIN &> /dev/null
+   
+  if [ "${dmdev}x" == "x" ]; then
+    dmdev=`ls -1 /dev/mapper/[0-9]* 2>/dev/null`
+  fi
+
+  # Loop over dm devices
+  for device in $dmdev; do
+    if [ -e ${device} ]; then
+      volumename=`$SAN_DEV_NAME_BIN ${device} 2>/dev/null`
+      # Check if the link already exists
+      if [ -L $SAN_DEVICE_PATH/${volumename} ]; then
+        [ $VERBOSE ] && echo "Skipping already mapped ${device} <-> ${volumename} .."
+      else
+        [ $VERBOSE ] && echo "Creating ${device} <-> ${volumename} .."   
+        ln -sf ${device} $SAN_DEVICE_PATH/${volumename}
+      fi
+    fi
+
+  done
+
+  # Cleanup any dangling symlinks in our device path
+  $FIND_BIN -L ${SAN_DEVICE_PATH} -type l -print0 2> /dev/null |$XARGS_BIN -0 --no-run-if-empty rm
+
+}
+
+mount_volumes () {
+
+  local name=${1}
+  local volumename=""
+  local device=""
+  local device_is_mounted=1
+  local target_is_mounted=1
+  local mounted_volumes=`$MOUNT_BIN |$GREP_BIN -e " ${SAN_MOUNT_PATH}/"`
+  local fs_state
+  local fsck_status
+  local warning_string="No Thanks, please CORRUPT my data!"
+  local userinput
+
+  # Run the multipather
+  $MULTIPATH_BIN &> /dev/null
+
+  if [ "${name}x" == "x" ]; then 
+    name=`ls -1 ${SAN_DEVICE_PATH}/ 2>/dev/null`
+  fi
+
+  for volumename in $name; do
+
+    volumename=`basename $volumename`
+    device=`basename $(readlink -s -n ${SAN_DEVICE_PATH}/${volumename})`
+
+    # Check that the volumename and device actually exist
+    if [ ! -e ${SAN_DEVICE_PATH}/${volumename} ] || [ "${device}x" == "x" ]; then
+       echo "Can't find device (${SAN_DEVICE_PATH}/${volumename})! Skipping... "
+       continue
+    fi
+
+    # Create the target directory if it doesn't already exist
+    if [ ! -d ${SAN_MOUNT_PATH}/${volumename} ]; then
+      mkdir -p ${SAN_MOUNT_PATH}/${volumename}
+    fi
+
+    # Check if the device and target are already mounted
+    device_is_mounted=`echo "$mounted_volumes" |$GREP_BIN -ce "^${device}"`
+    target_is_mounted=`echo "$mounted_volumes" |$AWK_BIN '{print $3}' |$GREP_BIN -ce "^${SAN_MOUNT_PATH}/${volumename}"`
+
+    # Check if the filesystem is mounted
+    if [ $device_is_mounted -eq 0 ] && [ $target_is_mounted -eq 0 ]; then
+
+      # Check filesystem state
+      fs_state=`$FILE_BIN -b -L -s ${SAN_DEVICE_PATH}/${volumename}`
+      if [ `echo $fs_state |$GREP_BIN -ce "ext3 filesystem data"` -ne 1 ]; then
+        echo "ERROR: ${SAN_DEVICE_PATH}/${volumename} is not a vaild filesystem.. (Unknown ${fs_state}). Exiting!"
+        exit 1
+      fi
+
+      if [ "`$TUNE2FS_BIN -l ${SAN_DEVICE_PATH}/${volumename} |$GREP_BIN -e "Filesystem state:" |cut -d: -f2 |tr -d '[:space:]'`" != "clean" ] && [ "$FORCE_MOUNT" != "1" ]; then
+
+        echo -e "WARNING: The filesystem on (${SAN_DEVICE_PATH}/${volumename}) is not clean!\n  It is _HIGHLY_ recommended you do a filesystem check before continuing..."
+        read -p "  Should an FSCK of the filesystem be performed now? [Yes / ${warning_string}]: " userinput
+
+        if [ $userinput != "$warning_string" ]; then
+
+          # Do a filesystem check
+          echo "Running Filesystem check on (${SAN_DEVICE_PATH}/${volumename}).."
+          $FSCK_BIN -C0 -p ${SAN_DEVICE_PATH}/${volumename}
+          fsck_status=$?
+
+          if [ $fsck_status -gt 1 ] ; then
+            echo "ERROR: FSCK returns with exit status ($fsck_status).. Manual intervention is required.. Aborting!"
+            exit 1
+          fi
+
+        fi
+
+      fi
+
+      # Mount the filesystem
+      [ $VERBOSE ] && echo -n "Mounting (${volumename})... "
+      $MOUNT_BIN ${SAN_DEVICE_PATH}/${volumename} ${SAN_MOUNT_PATH}/${volumename} $MOUNT_OPTS
+      [ $VERBOSE ] && echo "Done."
+    else
+      [ $VERBOSE ] && echo "Skipping (${volumename}) as it is already mounted..."
+    fi
+
+  done 
+
+}
+
+unmount_volumes () {
+
+  local name=${1}
+  local volumename=""
+  local mounted_volumes=`$MOUNT_BIN |$GREP_BIN -e " ${SAN_MOUNT_PATH}/"`
+
+  if [ "${name}" == "all" ]; then
+    name=`ls -1 ${SAN_DEVICE_PATH}/ 2>/dev/null`
+  elif [ "${name}x" == "x" ]; then
+    echo "ERROR: Please specify a volumename!"
+    return 1
+  fi
+
+  for volumename in $name; do
+
+    volumename=`basename $volumename`
+
+    if [ ! -d ${SAN_MOUNT_PATH}/${volumename} ] || [ `echo "$mounted_volumes" |$GREP_BIN -ce " ${SAN_MOUNT_PATH}/${volumename}"` -eq 0 ]; then
+      echo "Volume (${SAN_MOUNT_PATH}/${volumename}) is not mounted.. Skipping!"
+      continue
+    fi
+
+      # Ensure we don't have any dependent processes using the FS
+      dependent_processes=`$FUSER_BIN -mu ${SAN_MOUNT_PATH}/${volumename} 2>&1 |cut -d ' ' -f2-`
+
+      # Let the user know there are problems
+      if [ "${dependent_processes}x" != "x" ]; then
+        echo "ERROR: Unable to umount volume (${volumename}) due to running processes:"
+        echo "${dependent_processes}" |$FOLD_BIN |$SED_BIN -e 's/c(/ (/g' -e 's/^/   /'
+        echo -e "   Please stop/kill these processes before attempting to unmount the volume.."
+        continue
+      fi
+
+      # Unmount the filesystem
+      [ $VERBOSE ] && echo -n "Unmounting (${volumename})... "
+      $UMOUNT_BIN ${SAN_MOUNT_PATH}/${volumename}
+      [ $VERBOSE ] && echo "Done."
+
+      # Flush the unused multipath devices
+      $MULTIPATH_BIN -F &> /dev/null
+
+  done
+
+}
+
+# Notes
+
+# Convert major/minor -> block dev
+# grep -se "8:16" /sys/block/*/dev |cut -d/ -f4
+
+# List of iscsi sessions
+# iscsiadm -m session |sed -e 's/\(^.*\[\)\(.*\)\(\].*$\)/\2/'
+
+VERBOSE=1
+
+# Print some usage information
+usage="Usage: $0 <login|logout|rescan|check|prepare|list|mount|unmount> [arg]\n\n
+
+\tmount  [vol]\t\t- Mount SAN volume on this host\n
+\tunmount [vol|all]\t- Unmount SAN volume on this host\n
+\trescan\t\t\t- Add/Remove new block devices to/from the system\n\n
+
+\tcheck [session]\t\t- Display sessions and block device dependencies\n
+\tprepare\t\t\t- Map SAN volumenames <-> exported block devices\n
+\tlist\t\t\t- List available SAN volumes exported to this host\n\n
+
+\tlogin\t\t\t- Establish iSCSI sessions to SAN array\n
+\tlogout [session]\t- Remove iSCSI sessions to SAN array\n"
+
+# Ensure the target path exists
+mkdir -p $SAN_DEVICE_PATH
+
+case "$1" in
+		login|start)
+                iscsi_login $PATH_CONFIG_FILE;  
+		;;
+                rescan|reload)
+                rescan_iscsi;
+                configure_block_device;
+                ;;
+		list|ls)
+		list_san_volumes;
+		;;
+   		logout|stop)
+		iscsi_logout $2;
+                ;;
+                check)
+                iscsi_checkpath $2;
+                configure_block_device;
+                ;;
+                mount)
+                mount_volumes $2;
+                ;;
+                umount|unmount)
+                unmount_volumes $2;
+                ;;
+                prepare|determine)
+                create_persistent_names $2;
+                ;;
+                unlink)
+                unlink_mpath_device $2;
+                ;;
+                *)
+                echo -e $usage
+                exit 1
+                ;;
+esac

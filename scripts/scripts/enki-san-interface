@@ -1,0 +1,151 @@
+#!/bin/bash
+
+# Michael Vallaly (Feb 2008)
+
+# This script configures local interfaces for use in Enki's MP-IO iSCSI SAN Network 
+# NOTE: This script may be called from /etc/network/interfaces without parameters
+
+SAN_NETWORKS="10.32.0.0/24 10.33.0.0/24"
+SAN_MTU="9000"
+
+IP_BIN="/bin/ip"
+ETHTOOL_BIN="/usr/sbin/ethtool"
+
+########################################################################################
+
+# Check for required binaries
+for req_bin in $IP_BIN $ETHTOOL_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+usage="Usage: $0 -i <interface> -m <add/del>" 
+
+while getopts "i:m:" options; do
+  case $options in
+    i ) interfaces+=" $OPTARG";;
+    m ) action=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check for ifup/down enviornment variables
+if [[ -n $MODE && -n $IFACE ]]; then
+   interfaces=$IFACE
+   action=$MODE
+fi
+
+# Figure out what we are doing
+case $action in
+   start ) action="add";;
+     add ) action="add";;
+    stop ) action="del";;
+     del ) action="del";;
+       * ) echo $usage
+           exit 1;;
+esac
+
+for interface in $interfaces; do
+
+  # Check that the interface exists before we go playing with it
+  if ! ($IP_BIN addr |egrep -nqe "inet.*$interface" && $IP_BIN link |egrep -nqe "$interface.*,UP"); then
+    continue
+  fi
+
+  table_num=$((`echo ${interface} |tr -d [[:alpha:]]` + 10))
+  interface_ip=`$IP_BIN route show scope link proto kernel dev ${interface} |awk '{print $3}'`
+  
+  if [ $table_num -gt 252 ]; then
+    echo "Invalid SAN interface (${table_num}) specified!"
+    exit 1
+  fi
+
+  for network in $SAN_NETWORKS; do
+
+    # Configure our remote SAN networks
+
+    localnet=`$IP_BIN route |grep "${interface}  proto kernel" |cut -d" " -f1`
+    existing_san_iface=`$IP_BIN route show ${network} |grep -we "via" |awk '{print $5}'`
+
+    # Don't add networks if they are locally connected
+    if [[ "$localnet" == "$network" ]]; then
+      continue
+    else
+
+      # Set our default gateway for remote networks
+      local=`echo $localnet |cut -d. -f1-3`
+
+      if [[ "$action" == "add" ]]; then    
+
+        # Create a unique route table
+        $IP_BIN route add ${localnet} dev ${interface} table ${table_num}
+        $IP_BIN route add ${network} via ${local}.1 dev ${interface} table ${table_num}
+        $IP_BIN rule add from ${interface_ip}/32 lookup ${table_num} 
+        route_match=`echo $existing_san_iface $interface |tr -t ' ' '\n'|sort -u`
+
+      else
+
+        # Delete the route table
+        $IP_BIN rule del from ${interface_ip}/32 lookup ${table_num} 2> /dev/null
+        route_match=`echo $existing_san_iface $interface |tr -t ' ' '\n'|sort -u |grep -v ${interface}`
+
+      fi
+
+      # Generate required next hops
+      route_opt=""
+      for dev in $route_match; do
+        route_opt="$route_opt nexthop via ${local}.1 dev ${dev}"
+      done
+
+      # Cleanup default route
+      $IP_BIN route del ${network} via ${local}.1 2> /dev/null
+
+      # Add/ReAdd the default route
+      if [ "${route_opt}" != "" ]; then
+        eval $IP_BIN route add ${network} scope global ${route_opt}
+      fi
+
+    fi
+
+  done
+
+  # Flush the routing cache
+  $IP_BIN route flush cache
+
+  # Configure our local network interfaces
+
+  if [[ "$action" == "add" ]]; then
+
+    # Set the proper MTU for the network interface (note this may take the interface offline!)
+    if [ "$($IP_BIN link show $interface |grep "mtu" |cut -d" " -f 5)" != "9000" ]; then 
+      $IP_BIN link set $interface mtu $SAN_MTU
+    fi
+    
+    # Force flowcontrol on 
+    $ETHTOOL_BIN --pause $interface autoneg off rx on tx on
+
+    # Only ARP for local interface
+    echo "1" > /proc/sys/net/ipv4/conf/${interface}/arp_ignore
+
+else
+
+    # Set the proper MTU for the network interface (note this may take the interface offline!)
+    if [ "$($IP_BIN link show $interface |grep "mtu" |cut -d" " -f 5)" == "9000" ]; then
+       $IP_BIN link set $interface mtu 1500
+    fi
+
+    # Force flowcontrol autoneg
+    $ETHTOOL_BIN --pause $interface autoneg on
+
+    # ARP for any interface
+    echo "0" > /proc/sys/net/ipv4/conf/${interface}/arp_ignore
+
+fi
+
+done
+

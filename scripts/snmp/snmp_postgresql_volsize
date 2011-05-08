@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Michael Vallaly July '09 Ver 1.1
+
+# This script produces the disk utilization for monuted PostgreSQL database volumes.
+
+SAN_BASE_PATH="/san"
+
+#####################################################################################
+
+# Parse our command line configuration
+usage="Usage: $0 -c <cluster> -v <version> -m(aster database) OR -s(lave database) AND -p(ercent) OR t(otals)"
+
+# We need at least three parameters
+if [ $# -lt 6 ]; then
+  echo "$usage" 
+  exit 1
+fi
+
+# Parse our command line options
+while getopts "c:mpstv:" options; do
+  case $options in
+    c ) PG_CLUSTER="$OPTARG";;
+    m ) DB_TYPE="master-database";;
+    p ) CHECK_TYPE="percent";;
+    s ) DB_TYPE="slave-database";;
+    t ) CHECK_TYPE="total";;
+    v ) PG_VERSION="$OPTARG";;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check that the mountpoint exists
+if [ -d $SAN_BASE_PATH/$DB_TYPE/$PG_VERSION/$PG_CLUSTER ]; then
+
+  # Grab our mountpoint
+  mountpoint=`readlink $SAN_BASE_PATH/$DB_TYPE/$PG_VERSION/$PG_CLUSTER`
+  if ! grep -qe "$mountpoint" /etc/mtab; then
+    echo "Postgresql cluster/version not mounted! Exiting.."
+    exit 1
+  fi
+  df_output=`df -hm "$mountpoint" 2> /dev/null |tail -1 |tr -d '%'`
+  snmp_label=`echo "${PG_CLUSTER}_${PG_VERSION}" |tr -t \[:lower:\] \[:upper:\]`
+
+  if [ "$CHECK_TYPE" == "percent" ]; then
+    snmp_output="${snmp_label}_PERCENT:`echo $df_output |awk '{print $5":100:0"}'`"
+  else
+    snmp_output="${snmp_label}_BLOCKS:`echo $df_output |awk '{print $3":"$2":0"}'`"
+  fi
+  # Ensure we output something 
+  if [ "${mountpoint}x" == "x" ]; then
+    echo "Error Parsing Output!"
+    exit
+  fi
+
+  # Print our output
+  echo $snmp_output
+
+else
+  echo "Postgresql cluster/version not found! Exiting.."
+  exit 1
+fi

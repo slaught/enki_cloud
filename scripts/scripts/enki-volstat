@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# This script provides a more readable iostat output for SAN volumes
+
+# Michael Vallaly Dec '10 ver 1.0
+
+AWK_BIN="/usr/bin/awk"
+GREP_BIN="/bin/grep"
+IOSTAT_BIN="/usr/bin/iostat"
+SED_BIN="/bin/sed"
+
+#################################################################################
+
+# Check for required binaries
+for req_bin in $AWK_BIN $GREP_BIN $IOSTAT_BIN $SED_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+# Set some globals
+name_regex=""
+dmlist=""
+volname_map=`ls -l /dev/iscsi-targets/`
+
+# Loop over each device mapper deivce
+for device in /sys/block/dm-* ; do 
+
+  # Generate the volume id / volume name and dm name tuple
+  volid=`cat ${device}/dm/name 2>/dev/null`
+  volname=`echo "$volname_map" |$GREP_BIN -e "/${volid}$" |$AWK_BIN '{print $8}'`
+  dmname=`basename ${device}`
+  dmlist+="${dmname} "
+
+  # Skip blank volume names
+  if [ "${volname}x" == "x" ]; then
+    continue
+  fi
+
+  # Generate our name regex 
+  name_regex+="-e 's@^${dmname}[[:space:]]*@${volname}  @g' "
+
+done
+
+# Run iostat and pipe the output through sed
+if [ "${name_regex}x" == "x" ]; then
+  $IOSTAT_BIN $@ ${dmlist}
+else
+  name_regex+="-e 's@^Device: @Device:          @g'"
+  $IOSTAT_BIN $@ ${dmlist} |eval $SED_BIN "${name_regex}" 
+fi

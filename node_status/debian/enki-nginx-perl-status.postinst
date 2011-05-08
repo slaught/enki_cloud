@@ -1,0 +1,9 @@
+#!/bin/sh
+# rename whatever default conf file that exists because it likely
+# overwrites port 80
+if [ -e /etc/nginx/sites-enabled/default ]
+then
+  mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.bak
+fi
+/etc/init.d/nginx restart
+

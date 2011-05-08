@@ -1,0 +1,46 @@
+host: 'localhost'
+user: 'cnuit_auto'
+
+connection:
+  :keys:
+    - '/etc/keys/sample.key'
+  :port: 2222
+
+config:
+  iqn: 'iqn.2010-09.com.example:01'
+  logfile: 'log/isimud/three_par.log'
+
+locations:
+  - dc1
+  - dc2
+
+arguments:
+  add_host: 
+    - '@domain'
+    - '@hostname'
+    - '@os'
+    - '@loc'
+    - '@ip'
+  add_volume: 
+    - '@snp'
+    - '@usr'
+    - '@name'
+    - '@size'
+  remove_volume:
+    - '@volname'
+  export_volume:
+    - '@volname'
+    - '@lun'
+    - '@hostname'
+  unexport_volume: 
+    - '@volname'
+    - '@lun'
+    - '@hostname'
+  create_ro_snap:
+    - '@comment'
+    - '@snapname'
+    - '@volname'
+  create_rw_snap: 
+    - '@comment'
+    - '@snapname'
+    - '@volname'

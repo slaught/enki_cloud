@@ -1,0 +1,40 @@
+<% set_html_title "PDU Plug Mappings" %>
+<h1>PDU Plug Mappings</h1>
+<span id="pdu_push">
+  <%= link_to_remote "Push PDU", :update => "pdu_push", :url => {:controller => "push", :action => "pdu"}%>
+</span>
+<br/>
+<% for pdu in @pdus %>
+<% pdu_nodes = Pdu.find_all_by_pdu_id(pdu.id) %>
+<h3><a href='#' onclick='Effect.toggle("table_<%= pdu.to_label %>", "blind", {duration:0.2});; return false;' style="text-decoration: none;">+</a> <%= link_to_pdu(pdu) %> (<%= pdu_nodes.length %> plugs)</h3>
+<div id="table_<%= pdu.to_label %>" style="display: none;">
+<% if pdu_nodes.length > 0 %>
+<table>
+  <tr>
+    <th>Hostname</th>
+    <th>Outlet</th>
+  </tr>
+<% for p in pdu_nodes %>
+  <tr>
+    <td><%= link_to_node(p.node) %></td>
+    <td><%= p.outlet_no %></td>
+    <% permitted_to? :unplug_pdu, :node do %>
+    <td class="td_extra">
+<% form_remote_tag(:html => {:id=>"remove_pdu_#{p.id}",
+         :action => { :controller => "node", :action => "unplug_pdu", :id => p.node.id}},
+         :url => url_for({ :controller => "node", :action => "unplug_pdu", :id => p.node.id}),
+         :complete => "location.reload(true)",
+         :confirm => "Sure you want to unplug this?" ) do  %>
+    <%= hidden_field_tag( "pdus_id", p.id ) %>
+    <%= image_submit_tag "/images/silk/delete.png" %>
+    <% end %>
+    </td>
+    <% end %>
+  </tr>
+<% end %>
+</table>
+<% else %>
+<strong>Nothing is plugged into this PDU!</strong>
+<% end %>
+</div>
+<% end %>

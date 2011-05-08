@@ -1,0 +1,73 @@
+<div id="node_disks" class="node_data">
+<h2>Disks</h2>
+<%= render :partial => 'shared/partial_flashes' %>
+<table class="disks">
+<tr>
+  <th>Type</th>
+  <th>Name</th>
+  <th>Block Name</th>
+  <th>Mount Point</th>
+  <th>Total megabytes</th>
+</tr>
+<% if node.node_type.is_virtual? and  node.disks.length == 0 then  %>
+  <tr><td>file</td>
+      <td>disk.img</td>
+    <% if node.only_supports_ide? %>
+      <td>hda1</td>
+    <% else %>
+      <td>sda1</td>
+    <% end %>
+      <td>/</td><td>4096</td><td class="td_extra">(default)</td></tr>
+<% end %>
+<% for disk in node.disks %>
+<tr>
+<td><%= disk.disk_type %></td>
+<td><%= disk.name %></td>
+<td><%= disk.block_name(node) %></td>
+<td><%= disk.mount_point %></td>
+<td><%= disk.total_megabytes %></td>
+  <% if permitted_to? :remove_disk, :node and disk.can_be_removed_from? node %>
+     <td class="td_extra">
+  <% form_remote_tag(:html => {:id=>"remove_disk_#{disk.disk_id}",
+         :action => { :action => "remove_disk", :id => node.id}},
+         :url => url_for({ :action => "remove_disk", :id => node.id}), 
+         :update => 'node_disks') do  %>
+    <%= hidden_field_tag( "disk", disk.disk_id) %>
+    <%= image_submit_tag "silk/delete.png" %>
+  <% end %>
+  </td>
+  <% end %>
+</tr>
+<% end %>
+</table>
+
+<% permitted_to? :add_disk, :node do %>
+<div>
+  <% form_remote_tag(:html => {:id=>"add_disk_to_node",
+         :action => { :action => "add_disk", :id => node.id}},
+         :url => url_for({ :action => "add_disk", :id => node.id}), 
+         :update => 'node_disks') do   %>
+<table class="form_table">
+<!-- <tr><td>Type</td><td>Name</td><td>Mount Point</td><td>Total megabytes</td></tr> -->
+<colgroup><col class="first" /><col class="entry_col" /></colgroup>
+<tr>
+<td>Type</td>
+<td><%= select("disk", :disk_type, [['Xen Disk','xendisk'],['San Volume','sandisk']]) %></td>
+</tr><tr>
+<td>Name</td>
+<td><%= text_field_tag "disk[name]", '', :size => 45 %> e.g. <em>disk.img</em> or <em>iqn.2001-05.com.equallogic:0-8a0...b0c-pi-transfer</em></td> 
+</tr><tr>
+<td>Mount Point</td>
+<td><%= text_field_tag "disk[mount_point]",'/', :size => 10  %></td> 
+</tr><tr>
+<td>Total megabytes</td>
+<td><%= text_field_tag "disk[total_megabytes]", '' , :size => 12, :type => 'number' %></td> 
+</tr><tr>
+<td></td>
+<td><%= submit_tag "Add Disk" %></td>
+  </tr>
+</table>
+  <% end %>
+  </div>
+<%end %>
+</div>

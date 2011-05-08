@@ -1,0 +1,41 @@
+<% set_html_title "Clusters" %>
+<h1>Clusters</h1>
+<% if permitted_to? :create, :cluster %>
+<div>
+<ul>
+<li><%= link_to "Create new cluster", :action => "new" %> </li>
+</ul>
+</div>
+<% end %>
+<div id="chart"></div>
+<script><%= @sparkline %></script>
+
+<table class="sortable">
+  <tr class="thead">
+    <th>Cluster name</th> <th>Description</th>
+ <th>vlan</th> <th>IP Network</th> <th>Forward mark</th>
+ <th>Load balanced?</th>
+  </tr>
+<% for entry in @clusters %>
+  <tr>
+    <td><%= link_to_cluster(entry)  %></td>
+    <td><%= entry.description %></td>
+    <td><%= entry.vlan %></td>
+    <td sorttable_customkey="<%= sorttable_ip(entry.ip_range) %>"><%= entry.ip_range %></td>
+    <td><%= entry.fw_mark %></td>
+    <td><%= entry.cluster_type %></td>
+  <% permitted_to? :edit, :cluster do %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/page_white_edit.png", :alt => "Edit"), {:action => "edit", :id => entry}, {:title => "Edit"} %></td>
+  <%end %>
+  <% permitted_to? :delete, :cluster do %>
+    <td class="td_extra"><%= link_to image_tag("/images/silk/cross.png", :alt => "Destroy"), {:action => "destroy", :id => entry}, { :confirm => "Are you sure?", :method => :post, :title => "Destroy" } unless entry.active?%></td> 
+  <%end %>
+  </tr>
+<% end %>
+</table>
+<!-- 
+ %= link_to "Previous page", { :page => @cluster_pages.current.previous } if @cluster_pages.current.previous % 
+ %= link_to "Next page", { :page => @cluster_pages.current.next } if @clsuter_pages.current.next %  
+-->
+<br />
+<%= link_to "New Cluster", :action => "new" if permitted_to? :create, :cluster %>

@@ -1,0 +1,27 @@
+
+== Enki Scripts ==
+
+Add a new entry to changelog.
+Then run build process
+
+% dch -i 
+% make build
+
+All files in subdirectoy 'bin' is mapped to enki/bin.
+'scripts' is mapped to etc/enki/scripts
+
+
+
+== Warning ==
+
+Installing enki-scripts or updating the enki-scripts package
+will restart the firewall. If the package is messed up it
+could mess up any machine in which it is installed.
+
+
+== check_files.rb ==
+
+% ruby  check_files.rb
+This reports on files which are missing from the package
+file list files in debian/*.install .
+

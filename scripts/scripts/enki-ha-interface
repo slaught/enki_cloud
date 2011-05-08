@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# Michael Vallaly (Feb 2008)
+
+# This script configures policy routing for HA interfaces for use on Enki Loadbalancers 
+# NOTE: This script may be called from /etc/network/interfaces without parameters
+
+HA_NETWORKS="10.10.10.0/24"
+IP_BIN="/bin/ip"
+
+########################################################################################
+
+# Check for required binaries
+for req_bin in $IP_BIN; do
+  if [ ! -x "$req_bin" ]; then
+    echo "Can't execute ${req_bin}! Aborting.."
+    exit 1
+  fi
+done
+
+usage="Usage: $0 -i <interface> -m <add/del>" 
+
+while getopts "i:m:" options; do
+  case $options in
+    i ) interfaces+=" $OPTARG";;
+    m ) action=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Check for ifup/down enviornment variables
+if [[ -n $MODE && -n $IFACE ]]; then
+   interfaces=$IFACE
+   action=$MODE
+fi
+
+# Figure out what we are doing
+case $action in
+   start ) action="add";;
+     add ) action="add";;
+    stop ) action="del";;
+     del ) action="del";;
+       * ) echo $usage
+           exit 1;;
+esac
+
+# Set a HA network counter
+netcount=0
+
+for interface in $interfaces; do
+
+  # Check that the interface exists before we go playing with it
+  if ! ($IP_BIN addr |egrep -nqe "inet.*${interface}" && $IP_BIN link |egrep -nqe "${interface}.*,UP"); then
+    continue
+  fi
+  
+  for network in $HA_NETWORKS; do
+
+    # Increment network counter
+    netcount=$((${netcount} + 1))
+
+    # Generate a table id (+30 offset)
+    table_num=$((${netcount} + 30))
+
+    if [ $table_num -gt 252 ]; then
+      echo "Invalid HA interface (${table_num}) specified!"
+      exit 1
+    fi
+
+    # Configure our HA networks
+
+    localnet=`$IP_BIN route |grep "${interface}  proto kernel" |cut -d" " -f1`
+
+    # Only modify routes if networks are locally connected
+    if [[ "$localnet" != "$network" ]]; then
+      continue
+    else
+
+      # Set our default gateway for remote networks
+      gateway="`echo $localnet |cut -d. -f1-3`.1"
+
+      if [[ "$action" == "add" ]]; then    
+
+        # Create a unique default gateway for traffic exiting the HA interface
+        $IP_BIN route add default via ${gateway} dev ${interface} table ${table_num}
+        $IP_BIN rule add from ${network} lookup ${table_num} 
+
+      else
+
+        # Delete the default gateway
+        $IP_BIN route del default via ${gateway} dev ${interface} table ${table_num} 
+        $IP_BIN rule del from ${network} lookup ${table_num} 
+
+      fi
+
+    fi
+
+  done
+
+  # Flush the routing cache
+  $IP_BIN route flush cache
+
+done
+

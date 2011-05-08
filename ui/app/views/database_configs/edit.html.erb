@@ -1,0 +1,9 @@
+<% set_html_title "#{@database_config.name} (Edit)", "Database Configurations" %>
+<h1>Editing Database Config</h1>
+<% form_for(@database_config) do |f| %>
+<%= render :partial => 'edit', :locals => {:f => f } %> 
+<p><%= f.submit "Update" %></p>
+<% end %>
+
+<%= link_to 'Show', @database_config %> |
+<%= link_to 'List', database_configs_path %>

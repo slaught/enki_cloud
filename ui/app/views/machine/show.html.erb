@@ -1,0 +1,21 @@
+<% set_html_title @machine.model_no, "Machines" %>
+<h1><%= @machine.model_no %></h1>
+<h2><%= @machine.manufacturer %></h2>
+<dl>
+<dt>Memory (MB)</dt> <dd><%= @machine.megabytes_memory %></dd>
+<dt>CPU Cores</dt> <dd><%= @machine.cpu_cores %></dd>
+<dt>Power Supplies</dt> <dd><%= @machine.power_supplies %></dd>
+<dt>CPU Speed (MHz)</dt> <dd><%= @machine.cpu_speed_megahertz %></dd>
+<dt>Network Interfaces</dt> <dd><%= @machine.network_interfaces %></dd>
+<dt>Max Amps Used</dt> <dd><%= @machine.max_amps_used %></dd>
+<dt>Max BTU/Hour</dt> <dd><%= @machine.max_btu_per_hour %></dd>
+<dt>Serial Console Type</dt> <dd><%= @machine.serial_console_type %></dd>
+<dt>Rack Size</dt> <dd><%= @machine.rack_size %></dd>
+<dt>Serial</dt> <dd><%= @machine.serial_baud_rate %> /<%= @machine.serial_dce_dte %>/<%= @machine.serial_flow_control%> </dd>
+</dl>
+
+<br/>
+<ul class="horiz_nav">
+  <li><%= link_to "Edit", :action => "edit", :id => @machine.id if permitted_to? :edit, :machine %></li>
+  <li><%= link_to "List", :action => "list" %></li>
+</ul>

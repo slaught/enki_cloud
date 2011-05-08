@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# This script sanity/validity checks the pacemaker resource/constraints files against the offical XML DTD
+
+# Michael Vallaly (July '10) Ver 1.0
+
+PTEST_BIN="/usr/sbin/ptest"
+MKTEMP_BIN="/bin/mktemp"
+
+PTEST_ARGS="-VV"
+
+######################################################################################
+
+# Check for local dependencies 
+for bindep in $MKTEMP_BIN $PTEST_BIN; do
+  if [ ! -e $bindep ] || [ ! -x $bindep ]; then
+    echo "Cannot execute (${bindep}).. Bailing!"
+    exit 1
+  fi
+done
+
+# Global Defaults
+DTD_VERSION="1.0"
+
+# Print our usage line
+usage="Usage: $0 -r <resource_xml_file> -c [constraint_xml_file] -d [dtd_version]"
+
+# Check our parameters
+while getopts "r:c:d:" options; do
+  case $options in
+    r ) RESOURCE_FILE="$OPTARG";;
+    c ) CONSTRATINT_FILE="$OPTARG";;
+    d ) DTD_VERSION="$OPTARG";;
+    \? ) echo -e $usage
+         exit 1;;
+     * ) echo -e $usage
+          exit 1;;
+  esac
+done
+
+if [ $# -lt 2 ]; then
+  echo -e $usage
+  exit 1
+fi
+
+# Generate temporary configfile
+CONFIG_XML=`$MKTEMP_BIN`
+trap "{ rm -f $CONFIG_XML; }" EXIT
+
+# Generate CIB header 
+echo "<cib validate-with=\"pacemaker-${DTD_VERSION}\" have-quorum=\"1\" admin_epoch=\"0\" epoch=\"0\" num_updates=\"1\"><configuration><crm_config/><nodes/>" >> $CONFIG_XML
+
+# Check for resource XML
+if [[ ! -r $RESOURCE_FILE ]]; then
+  echo "Cannot read $RESOURCE_FILE.. Exiting!"
+  exit 1
+else
+  cat $RESOURCE_FILE >> $CONFIG_XML
+fi
+
+# Check for constraint XML 
+if [[ ! -e $CONSTRATINT_FILE ]] || [[ ! -r $CONSTRATINT_FILE ]]; then
+  echo "<constraints/>" >> $CONFIG_XML
+else
+  cat $CONSTRATINT_FILE >> $CONFIG_XML
+fi
+
+# Generate CIB footer
+echo "</configuration><status/></cib>" >> $CONFIG_XML
+
+# Run the Test
+$PTEST_BIN ${PTEST_ARGS} -x $CONFIG_XML
+
+# Grab the exit status
+ptest_status=$?
+
+if [ $ptest_status -ne 0 ]; then
+  echo "######################### WARNING ###########################"
+  echo " Something went wrong with the pacemaker configuration test!"
+  echo " It is _HIGHLY_ recommended you sanity check the" 
+  echo "  configuration manually before attempting to deploy it.."
+  echo "######################## WARNING ##########################"
+fi

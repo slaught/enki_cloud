@@ -1,0 +1,9 @@
+<xen_mappings>
+<% for o in @nodes %>
+<domo name="<%= o.fn_prefix %>" node_id="<%= o.node_id %>">
+    <% for u in o.xen_guests.map {|g| g.guest } %>
+        <domu name="<%= u.fn_prefix %>" node_id="<%= u.node_id %>"></domu>
+    <% end %>
+</domo>
+<% end %>
+</xen_mappings>

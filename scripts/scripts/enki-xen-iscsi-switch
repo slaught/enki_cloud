@@ -1,0 +1,561 @@
+#!/bin/bash
+# Michael Vallaly (June '07)
+
+# This script handles the process of switching an iSCSI SAN volume used by a Xen DomU, which includes the following:
+#  Discovery/mounting of the new iSCSI targets, reconfiguration of DomU Xen configuration, restarting of Xen DomU, 
+#  removal of the old iSCSI targets, and optional execution of scripts on the DomU instance.
+
+#We should be passed a symlink_point,portal,iscsi_iqn,backup_label_id,partition
+
+# San mountpoint tree
+# /san/
+#      <iqn-old-partition>/					# SAN Filesystem Mountpoint
+#      <iqn-new-partition>/					# SAN Filesystem Mountpoint
+
+MULTIPATH_BIN="/sbin/multipath"
+ISCSIADM_BIN="/usr/bin/iscsiadm"
+SAN_MOUNTPOINT="/san"
+XEN_CFG_DIRS="/etc/xen"
+ISCSI_DEVICE_DIR="/dev/iscsi-targets"
+XM_BIN="/usr/sbin/xm"
+
+WAIT_SECONDS="5"
+WAIT_CYCLES="8"
+
+################################################################################################################################################################
+
+## TODO ##
+#
+#  Needs option to remove unused blockdevs from xen configs
+#  Never Logout of a iSCSI target without validating ANY DomUs are still using it (will cause severe problems)
+#
+#  NOTES:
+#    cat /sys/devices/xen-backend/vbd-DOMID-VBDID/physical_device
+#    convert hex -> decimal = major/minor
+#
+## TODO ##
+
+
+EXECUTE_ERRORS=0
+
+usage="Usage: $0 -b [domU_block_device] -p <portal> -T <iqn.iscsi_iqn> -o [xen_override_cmd] -P [partition] -u [domU_name]"
+
+while getopts "b:p:P:T:o:u:" options; do
+  case $options in
+    b ) DOMU_BLOCKDEV=$OPTARG;;
+    p ) NEW_PORTAL=$OPTARG;;
+    P ) PARTITION_NUM=$OPTARG;;
+    o ) OVERRIDE_CMD=$OPTARG;;
+    T ) NEW_IQN=$OPTARG;;
+    u ) DOMU_NAME=$OPTARG;;
+    \? ) echo $usage
+         exit 1;;
+     * ) echo $usage
+          exit 1;;
+  esac
+done
+
+# Set our default partition
+if [ "$PARTITION_NUM" == "" ]; then
+  PARTITION=""
+  else
+  PARTITION="-part$PARTITION_NUM"
+fi
+
+# Check if we got a portal
+if [ "$NEW_PORTAL" == "" ]; then
+  echo $usage
+  exit 1
+fi
+
+# Check if we got a override command 
+if [ "$OVERRIDE_CMD" != "" -a "$DOMU_NAME" == "" ]; then
+  echo "Override option requires the domU_name option.."
+  echo $usage
+  exit 1
+fi
+
+# Check if we got an IQN
+if [ "$NEW_IQN" == "" ]; then
+  echo $usage
+  exit 1
+fi
+
+# Check if we are running as root.
+if [ "$UID" -ne 0 ]; then
+  echo "Superuser persmissions required to mount iSCSI targets!" 
+  exit 1
+fi
+
+### Load our functions ###
+
+# iscsi_do_discovery (iqn, portal)
+iscsi_do_discovery() {
+  # Do an iSCSI discovery on the portal for targets and verify we can reach them
+  if ! $ISCSIADM_BIN --mode discovery -t sendtargets -p $2 |grep "$2" |grep -nq "$1" ; then
+    echo "Cannot find target on requested portal! Aborting..."
+    return 1
+  else
+    return 0
+  fi
+}
+
+# iscsi_login_to_target (iqn, portal)
+iscsi_login_to_target() {
+  # Login to iscsi target 
+  if ! $ISCSIADM_BIN --mode node --targetname $1 --portal $2:3260 -l 1> /dev/null; then
+     echo "Login to target $1 on portal $2 failed! Aborting..."
+     return 1
+  else
+    return 0
+  fi
+}
+
+# iscsi_logout_of_target (iqn)
+iscsi_logout_of_target() {
+  # Logout of an iscsi target 
+  if ! $ISCSIADM_BIN --mode node --targetname $1 -u 1> /dev/null; then
+     echo "Logout of target $1 failed! Aborting..."
+     return 1
+  else
+    return 0
+  fi
+}
+
+#iscsi_check_iqn_multipath (iqn)
+iscsi_check_iqn_multipath () {
+  # Check that the iSCSI iqn is multipathed via atleast two sessions
+  local device=`readlink -f /dev/iscsi-targets/$1`
+  local majorminor=`ls -l $device |awk '{print $5 ":" $6}' | tr -d ','`
+  local dm_name=`/sbin/devmap_name $majorminor`
+  local count=`$MULTIPATH_BIN -ll -v2 $dm_name |grep -c -e "\[active\]\[ready\]"`
+  echo -n "$count MPIO path(s) connected.. "
+  if [ "$count" -ge "2" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# next_available_num (list of numbers)
+next_available_num() {
+  
+  # Returns the next number after the largest in a list
+  local max=$1
+
+  if [ ! -z "$2" ]; then
+    while [ ${#} -gt 1 ]; do
+      shift
+      if [[ "$max" -lt "$1" ]]; then
+        max=$1
+      fi
+
+    done
+  fi
+
+  max=$[max+1]
+  echo $max
+
+}
+
+# wait_for_link (link, wait_cycles)
+wait_for_link() {
+
+  local link=$1
+  local cycle=$2
+
+  until [ $cycle -le 0 ]; do
+
+    # Check if the link has shown up
+    if test -L "$1"; then
+      return 0
+    else
+      sleep $WAIT_SECONDS
+    fi
+
+    cycle=$[cycle-1]
+
+  done
+  return 1
+}
+
+# get_partnum_from_blockdev ( blockdev )
+get_partnum_from_blockdev() {
+  # Returns the partition number for blockdevs
+  echo $@ |tr -d \[:alpha:\]
+}
+
+# get_device_from_blockdev ( blockdev )
+get_device_from_blockdev() {
+  # Returns the device for a blockdev
+  echo $@ |tr -d \[:digit:\] |tr -t " " "\n" |sort |uniq |tail -1
+}
+
+# revert_domu_config ()
+revert_domu_config() {
+
+  # Revert to previous DomU config
+  echo -n "Restoring old XEN configuration.. "
+  if ! cp -a "$XEN_CFG_DIRS/$DOMU_NAME.cfg.bak" "$XEN_CFG_DIRS/$DOMU_NAME.cfg"; then
+    echo "Restore Failed."
+    exit 1
+  else
+    rm -f $XEN_CFG_DIRS/$DOMU_NAME.cfg.bak
+    echo "Done."
+  fi
+
+}
+
+# check_domu_running (domU_name, wait_cycles)
+check_domu_running() {
+
+local cycle=$2
+
+while [ $cycle -ge 0 ]; do 
+
+  # Grab the DomU status 
+  local xen_status=`$XM_BIN list |grep $1 |awk '{print $5}'`
+
+  if [[ "$xen_status" == "r-----" || "$xen_status" == "-b----" ]]; then
+    break
+  fi
+ 
+  sleep $WAIT_SECONDS
+ 
+  cycle=$[cycle-1]
+
+done
+
+# Final Check
+local xen_status=`$XM_BIN list |grep $1 |awk '{print $5}'`
+if [[ "$xen_status" == "r-----" || "$xen_status" == "-b----" ]]; then
+  return 0
+else
+  return 1
+fi
+
+}
+
+
+### End of Functions ###
+
+EXISTING_IQN=0
+
+# Check if we are already connected to the desired IQN
+CONNECTED_IQNS=`$ISCSIADM_BIN -m session 2> /dev/null |grep -e " $NEW_PORTAL:" |cut -d " " -f4 |sort |uniq`
+if [ "`echo $CONNECTED_IQNS |wc -w`" -gt "0" ]; then
+  echo -n "Parsing existing iSCSI connection information.. "
+  for iqn in $CONNECTED_IQNS; do
+   if [[ "$NEW_IQN" == "$iqn" ]]; then
+     EXISTING_IQN=1
+   else
+     continue
+   fi
+  done
+  echo "Done."
+fi
+
+# If we are not already connected do the discovery / login
+if [ "$EXISTING_IQN" -eq "0" ]; then
+
+  # Do the iSCSI Discovery
+  echo -n "Initiating iSCSI discovery for target.. "
+  if ! iscsi_do_discovery $NEW_IQN $NEW_PORTAL; then
+    echo "Aborting..."
+    exit 1
+  else
+    echo "Done."
+  fi
+
+  echo -n "Logging into remote iSCSI target(s).. "
+  # Log in to the iSCSI Target
+  if ! iscsi_login_to_target $NEW_IQN $NEW_PORTAL; then
+    echo "Aborting..."
+    exit 1
+  else
+    echo "Done."
+  fi
+
+  # Wait for udev devices to settle
+  echo -n "Waiting for udev devices to settle.. "
+  if ! wait_for_link /dev/iscsi-targets/$NEW_IQN${PARTITION} $WAIT_CYCLES ; then
+    echo "device never showed up.. Aborting..."
+    exit 1
+  else
+    echo "Done."
+  fi
+
+fi
+
+# Validate multipathing IO 
+echo -n "Validating iSCSI MPIO over multiple paths.. "
+if ! iscsi_check_iqn_multipath "$NEW_IQN"; then
+  echo -e "\n#############################################"
+  echo "# WARNING: Single iSCSI path detected!      #"
+  echo "# Check the device mapper multipath daemon! #"
+  echo "#############################################"
+  echo "$NEW_IQN not using MPIO!"
+else
+  echo "Done."
+fi
+
+########################################################################
+########################################################################
+
+
+# Check if we need to modify XEN configs
+if [ "$DOMU_NAME" != "" ]; then
+  XEN_CHANGES_REQUIRED=1
+
+  echo -n "Locating DomU configuration ($DOMU_NAME).. "
+  # Check if we can read the required XEN config
+  if [ ! -r "$XEN_CFG_DIRS/$DOMU_NAME.cfg" ]; then
+    echo "Xen configuration $XEN_CFG_DIRS/$DOMU_NAME.cfg does not exist!"
+    exit 1
+  else
+    echo "Done."
+  fi
+
+  echo -n "Parsing XEN disk configuration.. "
+  # Grab the config line where the DISK parameters begin
+  CFG_DISK_LINENUM=`cat $XEN_CFG_DIRS/$DOMU_NAME.cfg |sed -n '/disk.*=.*\[.*/='`
+  # Grab the disk configuration parameters
+  CFG_DISK_LIST=`cat $XEN_CFG_DIRS/$DOMU_NAME.cfg |sed -n '/disk.*=.*\[.*/, /\]/p' |grep -v "\]" |grep -v "\[" |tr -d "'"`
+  # Parse the existing config for IQN's / Block Devices
+  for line in $CFG_DISK_LIST; do 
+    OLD_XEN_BLOCKDEV="$(echo $line |cut -d "," -f2) $OLD_XEN_BLOCKDEV"
+    if [ "$(echo $line |grep -cn $ISCSI_DEVICE_DIR)" -gt "0" ]; then
+      OLD_XEN_IQNS="`basename $(echo $line |cut -d "," -f1)` $OLD_XEN_IQNS"
+    fi
+  done
+  echo "Done."
+
+  # If we didn't get passed a block device figure it out on our own.
+  if [ "$DOMU_BLOCKDEV" == "" ]; then
+     # Check the configuration file for an existing IQN
+     DOMU_BLOCKDEV=`echo "$CFG_DISK_LIST" |grep -e "phy:$ISCSI_DEVICE_DIR/$NEW_IQN${PARTITION}," |cut -d, -f2`
+     if [ "$DOMU_BLOCKDEV" == "" ]; then
+       # Get the next available partition
+       DOMU_BLOCKDEV="$(get_device_from_blockdev $OLD_XEN_BLOCKDEV)`next_available_num $(get_partnum_from_blockdev $OLD_XEN_BLOCKDEV)`"
+     fi
+  fi
+
+  REPLACED_IQN=0
+  UPDATED_CFG=0
+
+  # Create our replacement CFG lines
+  echo -n "Generate XEN configuration modifications.. " 
+  for line in $CFG_DISK_LIST; do
+      
+    # If the line contains our requested block device replace it with the new IQN.
+    if [ "$(echo $line |grep -cne ",$DOMU_BLOCKDEV,")" -gt "0" ]; then
+      old_iqn=$(basename `echo $line | cut -d: -f2- |awk -F "-part" '{print $1}'| cut -d, -f1`)
+      # Check if we are just switching the block device
+      if [ "$old_iqn" != "$NEW_IQN" ]; then
+        OLD_IQN=$old_iqn
+        OLD_PORTAL=`$ISCSIADM_BIN -m session |grep $OLD_IQN |awk '{print $3}'| cut -d: -f1 |uniq 2>/dev/null` 
+        REPLACED_IQN=1
+      fi
+      # Update the configuration line
+      NEW_CFG_DISK_LIST="$NEW_CFG_DISK_LIST `echo -e "phy:$ISCSI_DEVICE_DIR/$NEW_IQN${PARTITION},$DOMU_BLOCKDEV,w"`"
+      UPDATED_CFG=1
+    elif [ "$(echo $line |grep -cne "^phy:$ISCSI_DEVICE_DIR/$NEW_IQN${PARTITION},")" -gt "0" ]; then
+      # Remove any additional lines that contain the IQN/partition we have been passed.
+      continue
+    else
+      # Just print the old line unaltered
+      NEW_CFG_DISK_LIST="$NEW_CFG_DISK_LIST `echo $line |cut -d, -f 1-3`" 
+    fi
+  
+  done
+
+   # If we haven't updated a line yet append our changes
+   if [ "$UPDATED_CFG" -eq "0" ]; then
+      NEW_CFG_DISK_LIST="$NEW_CFG_DISK_LIST `echo -e "phy:$ISCSI_DEVICE_DIR/$NEW_IQN${PARTITION},$DOMU_BLOCKDEV,w"`"
+   fi
+
+  echo "Done."
+
+  # Back up the old XEN config
+  echo -n "Backing up XEN configuration.. "
+  if ! cp -a "$XEN_CFG_DIRS/$DOMU_NAME.cfg" "$XEN_CFG_DIRS/$DOMU_NAME.cfg.bak"; then
+    echo "Backup Failed."
+    exit 1
+  else
+    echo "Done."
+  fi
+
+  # Remove the old disk configuration section from the configuration file and create our new cfg file
+  sed $XEN_CFG_DIRS/$DOMU_NAME.cfg -e '/disk.*=.*\[.*/, /\]/d' > $XEN_CFG_DIRS/$DOMU_NAME.cfg.new
+
+  if [ "$?" -ne "0" ]; then
+    echo "Failed to create new configuration file.. Exiting."
+    exit 1
+  fi
+
+  # Generate XEN disk configuration replacement
+  
+  # Print Header
+  NEW_XEN_CFG=`echo -e "disk\t= [\n\r"`
+  num_of_lines=`echo $NEW_CFG_DISK_LIST |wc -w`
+  # Print out each line with proper spacing / terminiation
+  for line in $NEW_CFG_DISK_LIST; do
+   NEW_XEN_CFG="$NEW_XEN_CFG `echo -e "\t\t'$line'"`"
+   if [ "$num_of_lines" -eq "1" ]; then
+     NEW_XEN_CFG="$NEW_XEN_CFG`echo -e "\n\r"`"
+   else
+     NEW_XEN_CFG="$NEW_XEN_CFG`echo -e ",\n\r"`"
+   fi
+   num_of_lines=$[num_of_lines-1]
+  done
+  # Print Footer
+  NEW_XEN_CFG="$NEW_XEN_CFG`echo -e "\t]\n\r"`"
+
+  echo -n "Updating XEN disk configuration.. "
+  awk -v output="`echo -e "$NEW_XEN_CFG"`" "{ if (NR==$CFG_DISK_LINENUM) printf output; print}" $XEN_CFG_DIRS/$DOMU_NAME.cfg.new |tr -d '\r' > $XEN_CFG_DIRS/$DOMU_NAME.cfg
+
+  if [ "$?" -ne "0" ]; then
+    # Remove the extranious files
+    EXECUTE_ERRORS=1
+    rm -f $XEN_CFG_DIRS/$DOMU_NAME.cfg.new
+    echo "Update failed.."
+  else
+    # Remove the extranious files
+    rm -f $XEN_CFG_DIRS/$DOMU_NAME.cfg.new
+    echo Done.
+  fi
+
+  # If we got a configuration override lets process it
+  if [[ "$OVERRIDE_CMD" != "" && "$EXECUTE_ERRORS" -eq "0" ]]; then
+
+    echo -n "Processsing XEN Override Configuration.. "
+    OLD_EXTRA=`cat $XEN_CFG_DIRS/$DOMU_NAME.cfg |grep -e "^extra=" |cut -d= -f2- |tr -d \"`
+    cmd_option=`echo $OVERRIDE_CMD |cut -d= -f1`
+    cmd_setting=`echo $OVERRIDE_CMD |cut -d= -f2`
+
+    # Build the new extra line
+    NEW_EXTRA=""
+    EXTRA_REPLACED=0
+    for option in $OLD_EXTRA; do
+
+          case $option in
+          $cmd_option=*)
+              if [ "$cmd_setting" != "" ] ; then
+                NEW_EXTRA="$NEW_EXTRA $OVERRIDE_CMD"
+              fi
+              EXTRA_REPLACED=1
+              continue
+              ;;
+           *)
+              NEW_EXTRA="$NEW_EXTRA $option"
+	      ;;
+          esac
+    done
+
+    # If we didn't do a replacement append our option
+    if [ "$EXTRA_REPLACED" -eq "0" ]; then
+      NEW_EXTRA="$NEW_EXTRA $OVERRIDE_CMD"
+    fi
+
+    # Replace the extra line with our new one
+    sed -i -e "/^extra=/cextra=\"$NEW_EXTRA\"" "$XEN_CFG_DIRS/$DOMU_NAME.cfg"   
+    echo "Done."
+  fi
+
+fi
+
+# Handle the starting/stopping of the XEN DomU
+if [ "$XEN_CHANGES_REQUIRED" -eq "1" ]; then 
+
+  # Gracefully stop the DomU
+  if [ "$EXECUTE_ERRORS" -eq "0" ]; then
+    echo -n "Restarting the XEN DomU ($DOMU_NAME).. "
+    $XM_BIN shutdown -w $DOMU_NAME &>/dev/null
+    if [ "$?" -ne "0" ]; then
+      echo "Stopping XEN Failed."
+    else
+      echo -n "Stopped.. "
+    fi
+  fi
+
+# Lets try starting the DomU with new config  
+  if [ "$EXECUTE_ERRORS" -eq "0" ]; then
+    $XM_BIN create $DOMU_NAME.cfg &>/dev/null
+    # Check the command status
+    if [ "$?" -ne "0" ]; then
+      EXECUTE_ERRORS=1
+      echo "Starting XEN Failed."
+    else
+      echo "Started..."
+    fi
+  fi
+
+  # Check that our XEN DomU has booted.
+  if [ "$EXECUTE_ERRORS" -eq "0" ]; then
+    echo -n "Waiting for Xen DomU to start.. "
+    check_domu_running $DOMU_NAME $WAIT_CYCLES
+    if [ "$?" -ne "0" ]; then
+      EXECUTE_ERRORS=1
+      echo "Failed."
+    else
+      echo "Done."
+    fi
+  fi
+
+fi
+
+# Check DomU Startup return value
+if [ "$EXECUTE_ERRORS" -eq "0" ]; then
+   if [ "$REPLACED_IQN" -eq "1" ]; then
+     # Logout of Old Target
+      echo -n "Removing the old iSCSI connection(s).. "
+      if iscsi_logout_of_target "$OLD_IQN"; then
+        echo "Done."
+      else
+        echo "Couldn't remove old iSCSI connections.."
+      fi
+
+      echo "ENKI_IQN_STATUS=$OLD_PORTAL:$OLD_IQN"
+    
+   fi
+ 
+  echo "Success.."
+  exit 0
+
+else
+
+  if [ "$XEN_CHANGES_REQUIRED" -eq "1" ]; then
+    # Revert the Xen configuration 
+    echo "Reverting Xen Configuration..."
+    revert_domu_config
+
+    # Gracefully Start Xen DomU
+    echo -n "Attempting to restart previous xen instance ($DOMU_NAME).. "
+    $XM_BIN create $DOMU_NAME.cfg &>/dev/null
+
+    check_domu_running $DOMU_NAME $WAIT_CYCLES
+
+    if [ "$?" -eq "0" ]; then
+      echo "Success.. Done."
+    else
+      echo "DomU failed to restart.. Bailing!"
+    fi
+  fi
+
+  if [ "$EXISTING_IQN" -eq "0" ]; then
+    # Logout of new Target
+    echo -n "Removing the new iSCSI connections.. "
+    if iscsi_logout_of_target "$NEW_IQN"; then
+      echo "Done."
+    else
+      echo "Couldn't remove new iSCSI connections"
+    fi
+
+    echo "ENKI_IQN_STATUS=$NEW_PORTAL:$NEW_IQN"
+  
+  fi
+  
+  exit 1
+
+fi
+ 
